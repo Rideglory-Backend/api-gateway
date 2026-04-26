@@ -1,21 +1,21 @@
 export enum EventType {
-    OFF_ROAD = 'offRoad',
-    ON_ROAD = 'onRoad',
-    EXHIBITION = 'exhibition',
-    CHARITABLE = 'charitable',
+    OFF_ROAD = 'OFF_ROAD',
+    ON_ROAD = 'ON_ROAD',
+    EXHIBITION = 'EXHIBITION',
+    CHARITABLE = 'CHARITABLE',
 }
 
 export enum EventDifficulty {
-    EASY = 'easy',
-    MODERATE = 'moderate',
-    MEDIUM = 'medium',
-    HARD = 'hard',
-    VERY_HARD = 'veryHard',
+    EASY = 'EASY',
+    MODERATE = 'MODERATE',
+    MEDIUM = 'MEDIUM',
+    HARD = 'HARD',
+    VERY_HARD = 'VERY_HARD',
 }
 
 export enum EventState {
-    SCHEDULED = 'scheduled',
-    IN_PROGRESS = 'inProgress',
-    CANCELLED = 'cancelled',
-    FINISHED = 'finished',
+    SCHEDULED = 'SCHEDULED',
+    IN_PROGRESS = 'IN_PROGRESS',
+    CANCELLED = 'CANCELLED',
+    FINISHED = 'FINISHED',
 }

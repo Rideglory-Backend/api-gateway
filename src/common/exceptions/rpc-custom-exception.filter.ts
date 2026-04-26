@@ -1,25 +1,63 @@
-import { ArgumentsHost, BadRequestException, Catch, ExceptionFilter, HttpStatus, Logger } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
-import { throwError } from 'rxjs';
 
-@Catch(RpcException)
+@Catch()
 export class RpcCustomExceptionFilter implements ExceptionFilter {
-
-    catch(exception: RpcException, host: ArgumentsHost) {
+    catch(exception: unknown, host: ArgumentsHost) {
         const context = host.switchToHttp();
         const response = context.getResponse();
+        const normalized = this.normalizeError(exception);
 
-        const rpcError = exception.getError();
+        return response.status(normalized.status).json({
+            statusCode: normalized.status,
+            message: normalized.message,
+        });
+    }
 
-        if (typeof rpcError === 'object' && 'message' in rpcError && 'status' in rpcError) {
-            const status = rpcError.status;
+    private normalizeError(exception: unknown): { status: number; message: unknown } {
+        if (exception instanceof RpcException) {
+            const rpcError = exception.getError();
 
-            return response.status(status).json(rpcError);
+            if (
+                typeof rpcError === 'object' &&
+                rpcError !== null &&
+                'status' in rpcError &&
+                'message' in rpcError
+            ) {
+                return {
+                    status: Number((rpcError as { status: number }).status),
+                    message: (rpcError as { message: unknown }).message,
+                };
+            }
+
+            return {
+                status: HttpStatus.BAD_REQUEST,
+                message: rpcError,
+            };
         }
 
-        return response.status(HttpStatus.BAD_REQUEST).json({
-            statusCode: HttpStatus.BAD_REQUEST,
-            message: rpcError,
-        });
+        if (
+            typeof exception === 'object' &&
+            exception !== null &&
+            'status' in exception &&
+            'message' in exception
+        ) {
+            return {
+                status: Number((exception as { status: number }).status),
+                message: (exception as { message: unknown }).message,
+            };
+        }
+
+        if (exception instanceof Error) {
+            return {
+                status: HttpStatus.INTERNAL_SERVER_ERROR,
+                message: exception.message,
+            };
+        }
+
+        return {
+            status: HttpStatus.INTERNAL_SERVER_ERROR,
+            message: 'Internal server error',
+        };
     }
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpStatus, Inject, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpStatus, Inject, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { VEHICLES_SERVICE } from '../config';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { catchError, map } from 'rxjs';
@@ -19,9 +19,9 @@ export class VehiclesController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.vehiclesService.send('findOneVehicle', { id }).pipe(
-      catchError((error) => {
+      catchError((error) => { 
         throw new RpcException({
           message: error.message,
           status: HttpStatus.NOT_FOUND,
@@ -31,7 +31,7 @@ export class VehiclesController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() updateVehicleDto: UpdateVehicleDto) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() updateVehicleDto: UpdateVehicleDto) {
     return this.vehiclesService.send('updateVehicle', { id, ...updateVehicleDto }).pipe(
       catchError((error) => {
         throw new RpcException({
@@ -43,7 +43,7 @@ export class VehiclesController {
   }
 
   @Delete('hard-delete/:id')
-  hardDelete(@Param('id', ParseIntPipe) id: number) {
+  hardDelete(@Param('id', ParseUUIDPipe) id: string) {
     return this.vehiclesService.send('hardDeleteVehicle', { id }).pipe(
       catchError((error) => {
         throw new RpcException({
