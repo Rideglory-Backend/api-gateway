@@ -6,11 +6,11 @@ export enum EventType {
 }
 
 export enum EventDifficulty {
-    ONE = 'one',
-    TWO = 'two',
-    THREE = 'three',
-    FOUR = 'four',
-    FIVE = 'five',
+    EASY = 'easy',
+    MODERATE = 'moderate',
+    MEDIUM = 'medium',
+    HARD = 'hard',
+    VERY_HARD = 'veryHard',
 }
 
 export enum EventState {
