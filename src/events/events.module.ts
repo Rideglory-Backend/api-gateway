@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { EventsController } from './events.controller';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { envs } from 'config/envs';
-import { EVENTS_SERVICE } from 'config/services';
+import { EVENTS_SERVICE, USERS_SERVICE } from 'config/services';
 
 @Module({
   controllers: [EventsController],
@@ -15,6 +15,14 @@ import { EVENTS_SERVICE } from 'config/services';
         options: {
           port: envs.eventsMsPort,
           host: envs.eventsMsHost,
+        },
+      },
+      {
+        name: USERS_SERVICE,
+        transport: Transport.TCP,
+        options: {
+          port: envs.usersMsPort,
+          host: envs.usersMsHost,
         },
       },
     ])

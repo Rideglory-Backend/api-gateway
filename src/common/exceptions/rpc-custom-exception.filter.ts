@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 
 @Catch()
@@ -36,6 +36,24 @@ export class RpcCustomExceptionFilter implements ExceptionFilter {
             };
         }
 
+        if (exception instanceof HttpException) {
+            return this.normalizeHttpResponse(exception.getStatus(), exception.getResponse());
+        }
+
+        if (
+            typeof exception === 'object' &&
+            exception !== null &&
+            'response' in exception
+        ) {
+            const response = (exception as { response: unknown }).response;
+            const status =
+                'status' in exception
+                    ? Number((exception as { status: number }).status)
+                    : HttpStatus.INTERNAL_SERVER_ERROR;
+
+            return this.normalizeHttpResponse(status, response);
+        }
+
         if (
             typeof exception === 'object' &&
             exception !== null &&
@@ -57,6 +75,26 @@ export class RpcCustomExceptionFilter implements ExceptionFilter {
 
         return {
             status: HttpStatus.INTERNAL_SERVER_ERROR,
+            message: 'Internal server error',
+        };
+    }
+
+    private normalizeHttpResponse(status: number, errorResponse: unknown): { status: number; message: unknown } {
+        if (typeof errorResponse === 'string') {
+            return { status, message: errorResponse };
+        }
+
+        if (typeof errorResponse === 'object' && errorResponse !== null) {
+            const response = errorResponse as { statusCode?: number; message?: unknown; error?: unknown };
+
+            return {
+                status: response.statusCode ?? status,
+                message: response.message ?? response.error ?? 'Internal server error',
+            };
+        }
+
+        return {
+            status,
             message: 'Internal server error',
         };
     }
