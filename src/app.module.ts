@@ -4,9 +4,17 @@ import { EventsModule } from './events/events.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { HomeModule } from './home/home.module';
+import { MaintenancesModule } from './maintenances/maintenances.module';
 
 @Module({
-  imports: [AuthModule, VehiclesModule, EventsModule, UsersModule, HomeModule],
+  imports: [
+    AuthModule,
+    VehiclesModule,
+    EventsModule,
+    UsersModule,
+    MaintenancesModule,
+    HomeModule,
+  ],
   controllers: [],
   providers: [],
 })
