@@ -5,12 +5,14 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { HomeModule } from './home/home.module';
 import { MaintenancesModule } from './maintenances/maintenances.module';
+import { TrackingModule } from './tracking/tracking.module';
 
 @Module({
   imports: [
     AuthModule,
     VehiclesModule,
     EventsModule,
+    TrackingModule,
     UsersModule,
     MaintenancesModule,
     HomeModule,

@@ -1,9 +1,10 @@
 import { Body, Controller, Delete, Get, HttpStatus, Inject, Param, ParseUUIDPipe, Patch, Post, Put, Req, UnauthorizedException } from '@nestjs/common';
-import { USERS_SERVICE, VEHICLES_SERVICE } from '../config';
+import { MAINTENANCES_SERVICE, USERS_SERVICE, VEHICLES_SERVICE } from '../config';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { catchError, map } from 'rxjs';
 import { CreateVehicleDto, UpdateVehicleDto } from '@rideglory/contracts';
 import { firstValueFrom } from 'rxjs';
+import { timeout } from 'rxjs/operators';
 import { Request } from 'express';
 import { OmitType } from '@nestjs/mapped-types';
 
@@ -22,7 +23,9 @@ export class VehiclesController {
   constructor(
     @Inject(VEHICLES_SERVICE) private readonly vehiclesService: ClientProxy,
     @Inject(USERS_SERVICE) private readonly usersService: ClientProxy,
-  ) { }
+    @Inject(MAINTENANCES_SERVICE)
+    private readonly maintenancesService: ClientProxy,
+  ) {}
 
   @Get()
   findAll() {
@@ -96,21 +99,38 @@ export class VehiclesController {
   }
 
   @Delete('hard-delete/:id')
-  hardDelete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.vehiclesService.send('hardDeleteVehicle', { id }).pipe(
-      catchError((error) => {
-        throw new RpcException({
-          message: error.message,
-          status: HttpStatus.NOT_FOUND,
-        });
-      }),
-      map((__) => {
-        return {
-          message: 'Vehicle deleted successfully',
-          status: HttpStatus.OK,
-        };
-      })
+  async hardDelete(@Param('id', ParseUUIDPipe) id: string) {
+    await firstValueFrom(
+      this.maintenancesService
+        .send('softDeleteMaintenancesByVehicleId', { vehicleId: id })
+        .pipe(
+          timeout(15_000),
+          catchError((error) => {
+            throw new RpcException({
+              message:
+                error?.message ??
+                'Failed to remove vehicle maintenances before deletion',
+              status: HttpStatus.BAD_GATEWAY,
+            });
+          }),
+        ),
     );
+
+    await firstValueFrom(
+      this.vehiclesService.send('hardDeleteVehicle', { id }).pipe(
+        catchError((error) => {
+          throw new RpcException({
+            message: error.message,
+            status: HttpStatus.NOT_FOUND,
+          });
+        }),
+      ),
+    );
+
+    return {
+      message: 'Vehicle deleted successfully',
+      status: HttpStatus.OK,
+    };
   }
 
   private async getAuthenticatedUser(request: AuthenticatedRequest) {

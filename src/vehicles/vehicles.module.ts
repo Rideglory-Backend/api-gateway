@@ -1,7 +1,11 @@
 import { Module } from '@nestjs/common';
 import { VehiclesController } from './vehicles.controller';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { USERS_SERVICE, VEHICLES_SERVICE } from '../config/services';
+import {
+  MAINTENANCES_SERVICE,
+  USERS_SERVICE,
+  VEHICLES_SERVICE,
+} from '../config/services';
 import { envs } from '../config/envs';
 
 @Module({
@@ -23,6 +27,14 @@ import { envs } from '../config/envs';
         options: {
           port: envs.usersMsPort,
           host: envs.usersMsHost,
+        },
+      },
+      {
+        name: MAINTENANCES_SERVICE,
+        transport: Transport.TCP,
+        options: {
+          port: envs.maintenancesMsPort,
+          host: envs.maintenancesMsHost,
         },
       },
     ])

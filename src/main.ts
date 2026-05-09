@@ -4,11 +4,13 @@ import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { envs } from './config/envs';
 import { RpcCustomExceptionFilter } from './common/exceptions/rpc-custom-exception.filter';
+import { WsAdapter } from '@nestjs/platform-ws';
 
 async function bootstrap() {
   const logger = new Logger('ApiGateway');
 
   const app = await NestFactory.create(AppModule);
+  app.useWebSocketAdapter(new WsAdapter(app));
 
   app.setGlobalPrefix('api');
 
