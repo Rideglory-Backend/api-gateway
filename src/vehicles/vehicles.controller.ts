@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpStatus, Inject, Param, ParseUUIDPipe, Patch, Post, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpStatus, Inject, Param, ParseUUIDPipe, Patch, Post, Put, Req, UnauthorizedException } from '@nestjs/common';
 import { USERS_SERVICE, VEHICLES_SERVICE } from '../config';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { catchError, map } from 'rxjs';
@@ -50,6 +50,25 @@ export class VehiclesController {
       ...createVehicleDto,
       ownerId: user.id,
     });
+  }
+
+  @Put('my/:vehicleId/main')
+  async setMyMainVehicle(
+    @Req() request: AuthenticatedRequest,
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    return this.vehiclesService.send('setMainVehicleForOwner', {
+      ownerId: user.id,
+      vehicleId,
+    }).pipe(
+      catchError((error) => {
+        throw new RpcException({
+          message: error.message,
+          status: error?.status ?? HttpStatus.BAD_REQUEST,
+        });
+      }),
+    );
   }
 
   @Get(':id')

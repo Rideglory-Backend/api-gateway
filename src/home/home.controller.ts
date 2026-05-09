@@ -22,9 +22,9 @@ export class HomeController {
   async getHomeData(@Req() request: AuthenticatedRequest) {
     const user = await this.getAuthenticatedUser(request);
 
-    const [vehicles, upcomingEvents] = await Promise.all([
+    const [mainVehicle, upcomingEvents] = await Promise.all([
       firstValueFrom(
-        this.vehiclesService.send('findVehiclesByOwnerId', {
+        this.vehiclesService.send('findMainVehicleByOwnerId', {
           ownerId: user.id,
         }),
       ),
@@ -32,8 +32,7 @@ export class HomeController {
     ]);
 
     return {
-      user,
-      vehicles,
+      mainVehicle,
       upcomingEvents,
     };
   }
