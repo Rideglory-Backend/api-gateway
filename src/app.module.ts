@@ -6,6 +6,8 @@ import { UsersModule } from './users/users.module';
 import { HomeModule } from './home/home.module';
 import { MaintenancesModule } from './maintenances/maintenances.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { RegistrationsModule } from './registrations/registrations.module';
+import { PlacesModule } from './places/places.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { TrackingModule } from './tracking/tracking.module';
     VehiclesModule,
     EventsModule,
     TrackingModule,
+    RegistrationsModule,
+    PlacesModule,
     UsersModule,
     MaintenancesModule,
     HomeModule,

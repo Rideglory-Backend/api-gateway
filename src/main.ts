@@ -21,7 +21,11 @@ async function bootstrap() {
 
   app.useGlobalFilters(new RpcCustomExceptionFilter());
 
-  await app.listen(envs.port);
+  // Bind to all interfaces. Required in containerized prod runtimes (Docker,
+  // K8s, ECS, Cloud Run, …) and also lets emulators / physical devices on the
+  // same LAN reach the gateway during local development. Public exposure must
+  // still be controlled by the deployment's firewall / ingress.
+  await app.listen(envs.port, '0.0.0.0');
 
   logger.log(`ApiGateway is running on port ${envs.port}`);
 }
