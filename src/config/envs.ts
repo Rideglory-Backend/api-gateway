@@ -10,6 +10,8 @@ interface EnvVars {
   USERS_MS_HOST: string;
   MAINTENANCES_MS_PORT: number;
   MAINTENANCES_MS_HOST: string;
+  NOTIFICATIONS_MS_PORT: number;
+  NOTIFICATIONS_MS_HOST: string;
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_SERVICE_ACCOUNT_JSON?: string;
   GOOGLE_PLACES_API_KEY?: string;
@@ -27,6 +29,8 @@ const envSchema = joi
     USERS_MS_HOST: joi.string().required(),
     MAINTENANCES_MS_PORT: joi.number().required(),
     MAINTENANCES_MS_HOST: joi.string().required(),
+    NOTIFICATIONS_MS_PORT: joi.number().required(),
+    NOTIFICATIONS_MS_HOST: joi.string().required(),
     FIREBASE_PROJECT_ID: joi.string().optional(),
     FIREBASE_SERVICE_ACCOUNT_JSON: joi.string().optional(),
     GOOGLE_PLACES_API_KEY: joi.string().optional(),
@@ -52,6 +56,8 @@ export const envs = {
   usersMsHost: envVars.USERS_MS_HOST,
   maintenancesMsPort: envVars.MAINTENANCES_MS_PORT,
   maintenancesMsHost: envVars.MAINTENANCES_MS_HOST,
+  notificationsMsPort: envVars.NOTIFICATIONS_MS_PORT,
+  notificationsMsHost: envVars.NOTIFICATIONS_MS_HOST,
   firebaseProjectId: envVars.FIREBASE_PROJECT_ID,
   firebaseServiceAccountJson: envVars.FIREBASE_SERVICE_ACCOUNT_JSON,
   googlePlacesApiKey: envVars.GOOGLE_PLACES_API_KEY,

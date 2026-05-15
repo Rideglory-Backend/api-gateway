@@ -9,13 +9,17 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { OmitType } from '@nestjs/mapped-types';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import {
   CreateMaintenanceDto,
+  FindMaintenancesFilterDto,
   UpdateMaintenanceDto,
 } from '@rideglory/contracts';
 import { Request } from 'express';
@@ -52,15 +56,18 @@ export class MaintenancesController {
   ) {}
 
   @Get('vehicle/:vehicleId')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async findByVehicleId(
     @Req() request: AuthenticatedRequest,
     @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Query() filter: FindMaintenancesFilterDto,
   ) {
     const user = await this.getAuthenticatedUser(request);
     await this.validateVehicleOwner(vehicleId, user.id);
 
     return this.maintenancesService.send('findMaintenancesByVehicleId', {
       vehicleId,
+      filter,
     });
   }
 
