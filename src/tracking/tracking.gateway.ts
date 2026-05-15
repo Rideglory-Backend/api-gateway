@@ -12,21 +12,26 @@ import type { RawData } from 'ws';
 import { WebSocket } from 'ws';
 import { Public } from '../auth/decorators/public.decorator';
 import { FirebaseAuthService } from '../auth/firebase-auth.service';
-import { EVENTS_SERVICE } from '../config/services';
+import { EVENTS_SERVICE, USERS_SERVICE } from '../config/services';
+import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingRoomsService } from './tracking-rooms.service';
 
 type ClientMeta = { uid: string; eventId: string };
 
 @Public()
 @WebSocketGateway({ path: '/api/tracking/ws' })
-export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class TrackingGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(TrackingGateway.name);
   private readonly clientMeta = new WeakMap<WebSocket, ClientMeta>();
 
   constructor(
     @Inject(EVENTS_SERVICE) private readonly eventsService: ClientProxy,
+    @Inject(USERS_SERVICE) private readonly usersService: ClientProxy,
     private readonly firebaseAuthService: FirebaseAuthService,
     private readonly rooms: TrackingRoomsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   handleConnection(client: WebSocket, ...args: unknown[]) {
@@ -112,14 +117,14 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
     if (type === 'tracking.leave') {
       await this.handleLeave(client, meta, data);
+      return;
+    }
+    if (type === 'tracking.sos') {
+      await this.handleSos(client, meta, data);
     }
   }
 
-  private async handleJoin(
-    client: WebSocket,
-    meta: ClientMeta,
-    data: unknown,
-  ) {
+  private async handleJoin(client: WebSocket, meta: ClientMeta, data: unknown) {
     if (typeof data === 'object' && data !== null && 'eventId' in data) {
       const joinEventId = (data as { eventId?: unknown }).eventId;
       if (typeof joinEventId === 'string' && joinEventId !== meta.eventId) {
@@ -158,7 +163,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
 
-    const eventId = typeof payload.eventId === 'string' ? payload.eventId : meta.eventId;
+    const eventId =
+      typeof payload.eventId === 'string' ? payload.eventId : meta.eventId;
     if (eventId !== meta.eventId) {
       return;
     }
@@ -226,6 +232,128 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (client.readyState === WebSocket.OPEN) {
       client.close();
     }
+  }
+
+  private async handleSos(client: WebSocket, meta: ClientMeta, data: unknown) {
+    if (typeof data !== 'object' || data === null) {
+      return;
+    }
+    const payload = data as Record<string, unknown>;
+    const eventId =
+      typeof payload.eventId === 'string' ? payload.eventId : meta.eventId;
+    const userId =
+      typeof payload.userId === 'string' ? payload.userId : meta.uid;
+
+    if (eventId !== meta.eventId) {
+      return;
+    }
+
+    // Look up last known location from WS room state
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+    if (typeof payload.latitude === 'number') latitude = payload.latitude;
+    if (typeof payload.longitude === 'number') longitude = payload.longitude;
+
+    let sosResult: {
+      triggered: boolean;
+      fullName: string;
+      phone?: string | null;
+      latitude: number | null;
+      longitude: number | null;
+    };
+
+    try {
+      sosResult = await firstValueFrom(
+        this.eventsService
+          .send('markSosTriggered', { eventId, userId })
+          .pipe(timeout(10_000)),
+      );
+    } catch (error) {
+      this.logger.warn(`markSosTriggered failed: ${String(error)}`);
+      return;
+    }
+
+    if (!sosResult.triggered) {
+      // SOS already active — no-op
+      return;
+    }
+
+    // Use location from WS payload since events-ms doesn't store live positions
+    const resolvedLatitude = latitude ?? sosResult.latitude;
+    const resolvedLongitude = longitude ?? sosResult.longitude;
+
+    // Broadcast sos.alert to all room members
+    this.broadcast(eventId, {
+      type: 'tracking.sos.alert',
+      data: {
+        userId,
+        fullName: sosResult.fullName,
+        latitude: resolvedLatitude,
+        longitude: resolvedLongitude,
+        phone: sosResult.phone ?? undefined,
+      },
+    });
+
+    // FCM multicast to approved registrants
+    void this.sendSosFcmNotifications(
+      eventId,
+      userId,
+      sosResult.fullName,
+      resolvedLatitude,
+      resolvedLongitude,
+    ).catch((err: unknown) =>
+      this.logger.warn(`SOS FCM multicast failed: ${String(err)}`),
+    );
+  }
+
+  private async sendSosFcmNotifications(
+    eventId: string,
+    userId: string,
+    fullName: string,
+    latitude: number | null,
+    longitude: number | null,
+  ): Promise<void> {
+    const userIds = await firstValueFrom<string[]>(
+      this.eventsService
+        .send('getApprovedRegistrantUserIds', { eventId })
+        .pipe(timeout(10_000)),
+    );
+
+    for (const registrantUserId of userIds) {
+      if (registrantUserId === userId) continue; // don't notify the SOS sender
+
+      try {
+        const user = await firstValueFrom<{ id: string; fcmToken?: string | null }>(
+          this.usersService
+            .send('findOneUser', { id: registrantUserId })
+            .pipe(timeout(5_000)),
+        );
+
+        if (user.fcmToken) {
+          await this.notificationsService.sendFcm(
+            user.fcmToken,
+            '¡Alerta SOS!',
+            `${fullName} necesita ayuda urgente`,
+            {
+              type: 'SOS_ALERT',
+              eventId,
+              userId,
+              fullName,
+              latitude: String(latitude ?? ''),
+              longitude: String(longitude ?? ''),
+            },
+          );
+        }
+      } catch {
+        // Non-fatal — continue
+      }
+    }
+
+    // Insert notification row
+    await this.notificationsService.createNotification(userId, 'SOS_ALERT' as never, {
+      eventId,
+      userId,
+    });
   }
 
   private async sendSnapshotToClient(client: WebSocket, eventId: string) {

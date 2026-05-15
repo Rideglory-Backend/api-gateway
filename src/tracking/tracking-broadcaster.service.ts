@@ -32,7 +32,21 @@ export class TrackingBroadcaster {
     );
   }
 
-  private broadcastRaw(eventId: string, raw: string): void {
+  broadcastEventStarted(eventId: string): void {
+    this.broadcastRaw(
+      eventId,
+      JSON.stringify({ type: 'tracking.event.started', data: { eventId } }),
+    );
+  }
+
+  broadcastEventEnded(eventId: string): void {
+    this.broadcastRaw(
+      eventId,
+      JSON.stringify({ type: 'tracking.event.ended', data: { eventId } }),
+    );
+  }
+
+  broadcastRaw(eventId: string, raw: string): void {
     for (const client of this.rooms.getClients(eventId)) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(raw);

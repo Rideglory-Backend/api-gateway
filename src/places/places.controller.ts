@@ -22,4 +22,13 @@ export class PlacesController {
 
     return this.placesService.autocomplete(trimmedQuery, type);
   }
+
+  @Get('geocode')
+  geocode(@Query('q') query: string) {
+    const trimmedQuery = query?.trim();
+    if (!trimmedQuery) {
+      throw new BadRequestException('Query parameter "q" is required.');
+    }
+    return this.placesService.geocode(trimmedQuery);
+  }
 }
