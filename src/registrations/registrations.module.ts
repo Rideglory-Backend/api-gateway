@@ -3,11 +3,13 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { envs } from 'config/envs';
 import { EVENTS_SERVICE, USERS_SERVICE } from 'config/services';
 import { RegistrationsController } from './registrations.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   controllers: [RegistrationsController],
   providers: [],
   imports: [
+    NotificationsModule,
     ClientsModule.register([
       {
         name: EVENTS_SERVICE,

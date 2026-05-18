@@ -37,7 +37,7 @@ import { envs } from '../config/envs';
           host: envs.maintenancesMsHost,
         },
       },
-    ])
+    ]),
   ],
 })
-export class VehiclesModule { }
+export class VehiclesModule {}

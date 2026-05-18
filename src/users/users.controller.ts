@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Inject, ParseUUIDPipe, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Inject,
+  ParseUUIDPipe,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { CreateUserDto, UpdateUserDto } from '@rideglory/contracts';
 import { Public } from 'auth/decorators/public.decorator';
@@ -13,7 +24,9 @@ type AuthenticatedRequest = Request & {
 
 @Controller('users')
 export class UsersController {
-  constructor(@Inject(USERS_SERVICE) private readonly usersService: ClientProxy) { }
+  constructor(
+    @Inject(USERS_SERVICE) private readonly usersService: ClientProxy,
+  ) {}
 
   @Post('sign-up')
   @Public()
@@ -37,7 +50,10 @@ export class UsersController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() updateUserDto: UpdateUserDto) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
     return this.usersService.send('updateUser', { ...updateUserDto, id });
   }
 }

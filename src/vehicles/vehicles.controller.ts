@@ -1,5 +1,24 @@
-import { Body, Controller, Delete, Get, HttpStatus, Inject, Param, ParseUUIDPipe, Patch, Post, Put, Req, UnauthorizedException } from '@nestjs/common';
-import { MAINTENANCES_SERVICE, USERS_SERVICE, VEHICLES_SERVICE } from '../config';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  MAINTENANCES_SERVICE,
+  USERS_SERVICE,
+  VEHICLES_SERVICE,
+} from '../config';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { catchError, map } from 'rxjs';
 import { CreateVehicleDto, UpdateVehicleDto } from '@rideglory/contracts';
@@ -7,6 +26,7 @@ import { firstValueFrom } from 'rxjs';
 import { timeout } from 'rxjs/operators';
 import { Request } from 'express';
 import { OmitType } from '@nestjs/mapped-types';
+import { CreateSoatDto } from './dto/create-soat.dto';
 
 class CreateAuthenticatedVehicleDto extends OmitType(CreateVehicleDto, [
   'ownerId',
@@ -40,7 +60,9 @@ export class VehiclesController {
   @Get('my')
   async findMyVehicles(@Req() request: AuthenticatedRequest) {
     const user = await this.getAuthenticatedUser(request);
-    return this.vehiclesService.send('findVehiclesByOwnerId', { ownerId: user.id });
+    return this.vehiclesService.send('findVehiclesByOwnerId', {
+      ownerId: user.id,
+    });
   }
 
   @Post('my')
@@ -61,41 +83,48 @@ export class VehiclesController {
     @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
   ) {
     const user = await this.getAuthenticatedUser(request);
-    return this.vehiclesService.send('setMainVehicleForOwner', {
-      ownerId: user.id,
-      vehicleId,
-    }).pipe(
-      catchError((error) => {
-        throw new RpcException({
-          message: error.message,
-          status: error?.status ?? HttpStatus.BAD_REQUEST,
-        });
-      }),
-    );
+    return this.vehiclesService
+      .send('setMainVehicleForOwner', {
+        ownerId: user.id,
+        vehicleId,
+      })
+      .pipe(
+        catchError((error) => {
+          throw new RpcException({
+            message: error.message,
+            status: error?.status ?? HttpStatus.BAD_REQUEST,
+          });
+        }),
+      );
   }
 
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.vehiclesService.send('findOneVehicle', { id }).pipe(
-      catchError((error) => { 
-        throw new RpcException({
-          message: error.message,
-          status: HttpStatus.NOT_FOUND,
-        });
-      })
-    );
-  }
-
-  @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() updateVehicleDto: UpdateVehicleDto) {
-    return this.vehiclesService.send('updateVehicle', { ...updateVehicleDto, id }).pipe(
       catchError((error) => {
         throw new RpcException({
           message: error.message,
           status: HttpStatus.NOT_FOUND,
         });
-      })
+      }),
     );
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateVehicleDto: UpdateVehicleDto,
+  ) {
+    return this.vehiclesService
+      .send('updateVehicle', { ...updateVehicleDto, id })
+      .pipe(
+        catchError((error) => {
+          throw new RpcException({
+            message: error.message,
+            status: HttpStatus.NOT_FOUND,
+          });
+        }),
+      );
   }
 
   @Delete('hard-delete/:id')
@@ -132,6 +161,47 @@ export class VehiclesController {
       status: HttpStatus.OK,
     };
   }
+
+  // ── SOAT ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/vehicles/:vehicleId/soat
+   * Creates or updates the SOAT record for a vehicle.
+   */
+  @Post(':vehicleId/soat')
+  @HttpCode(HttpStatus.CREATED)
+  async upsertSoat(
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Body() dto: CreateSoatDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    return firstValueFrom(
+      this.vehiclesService
+        .send('upsertSoat', { vehicleId, ownerId: (user as { id: string }).id, dto })
+        .pipe(timeout(10_000)),
+    );
+  }
+
+  /**
+   * GET /api/vehicles/:vehicleId/soat
+   * Returns the SOAT record for a vehicle, or 204 if none.
+   */
+  @Get(':vehicleId/soat')
+  async getSoat(
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    const soat = await firstValueFrom(
+      this.vehiclesService
+        .send('findSoatByVehicle', { vehicleId, ownerId: (user as { id: string }).id })
+        .pipe(timeout(10_000)),
+    );
+    return soat ?? null;
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
 
   private async getAuthenticatedUser(request: AuthenticatedRequest) {
     const email = request.user?.email;

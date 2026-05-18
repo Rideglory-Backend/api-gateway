@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Inject,
+  Logger,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -18,6 +19,7 @@ import {
   UpdateRegistrationDto,
 } from '@rideglory/contracts';
 import { EVENTS_SERVICE, USERS_SERVICE } from '../config/services';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -27,13 +29,34 @@ type AuthenticatedRequest = Request & {
   };
 };
 
+type RegistrationResult = {
+  id: string;
+  eventId: string;
+  userId: string;
+};
+
+type EventResult = {
+  id: string;
+  title: string;
+  ownerId: string;
+};
+
+type UserResult = {
+  id: string;
+  email: string;
+  fcmToken?: string | null;
+};
+
 const RPC_TIMEOUT_MS = 5_000;
 
 @Controller()
 export class RegistrationsController {
+  private readonly logger = new Logger('RegistrationsController');
+
   constructor(
     @Inject(EVENTS_SERVICE) private readonly eventsService: ClientProxy,
     @Inject(USERS_SERVICE) private readonly usersService: ClientProxy,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @Post('events/:eventId/registrations')
@@ -43,11 +66,22 @@ export class RegistrationsController {
     @Req() request: AuthenticatedRequest,
   ) {
     const user = await this.getAuthenticatedUser(request);
-    return firstValueFrom(
+    const registration = await firstValueFrom<RegistrationResult>(
       this.eventsService
         .send('createRegistration', { ...body, eventId, userId: user.id })
         .pipe(timeout(RPC_TIMEOUT_MS)),
     );
+
+    // Notify event organizer of new registration
+    this.sendRegistrationNotification(
+      eventId,
+      registration.id,
+      'NEW_REGISTRATION',
+    ).catch((err: unknown) =>
+      this.logger.warn(`NEW_REGISTRATION FCM failed: ${String(err)}`),
+    );
+
+    return registration;
   }
 
   @Patch('registrations/:registrationId')
@@ -85,22 +119,44 @@ export class RegistrationsController {
   async approve(
     @Param('registrationId', ParseUUIDPipe) registrationId: string,
   ) {
-    return firstValueFrom(
+    const registration = await firstValueFrom<RegistrationResult>(
       this.eventsService
         .send('approveRegistration', { registrationId })
         .pipe(timeout(RPC_TIMEOUT_MS)),
     );
+
+    // Notify the registrant
+    this.sendStatusNotification(
+      registration.userId,
+      registration.eventId,
+      registration.id,
+      'REGISTRATION_APPROVED',
+    ).catch((err: unknown) =>
+      this.logger.warn(`REGISTRATION_APPROVED FCM failed: ${String(err)}`),
+    );
+
+    return registration;
   }
 
   @Post('registrations/:registrationId/reject')
-  async reject(
-    @Param('registrationId', ParseUUIDPipe) registrationId: string,
-  ) {
-    return firstValueFrom(
+  async reject(@Param('registrationId', ParseUUIDPipe) registrationId: string) {
+    const registration = await firstValueFrom<RegistrationResult>(
       this.eventsService
         .send('rejectRegistration', { registrationId })
         .pipe(timeout(RPC_TIMEOUT_MS)),
     );
+
+    // Notify the registrant
+    this.sendStatusNotification(
+      registration.userId,
+      registration.eventId,
+      registration.id,
+      'REGISTRATION_REJECTED',
+    ).catch((err: unknown) =>
+      this.logger.warn(`REGISTRATION_REJECTED FCM failed: ${String(err)}`),
+    );
+
+    return registration;
   }
 
   @Post('registrations/:registrationId/ready-for-edit')
@@ -146,12 +202,94 @@ export class RegistrationsController {
     );
   }
 
+  // ── FCM helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Sends FCM notification to the event organizer on new registration.
+   */
+  private async sendRegistrationNotification(
+    eventId: string,
+    registrationId: string,
+    type: 'NEW_REGISTRATION',
+  ): Promise<void> {
+    const event = await firstValueFrom<EventResult>(
+      this.eventsService
+        .send('findOneEvent', eventId)
+        .pipe(timeout(RPC_TIMEOUT_MS)),
+    );
+
+    const organizer = await firstValueFrom<UserResult>(
+      this.usersService
+        .send('findOneUser', { id: event.ownerId })
+        .pipe(timeout(RPC_TIMEOUT_MS)),
+    );
+
+    await this.notificationsService.createNotification(organizer.id, type, {
+      eventId,
+      registrationId,
+    });
+
+    if (organizer.fcmToken) {
+      await this.notificationsService.sendFcm(
+        organizer.fcmToken,
+        'Nueva inscripción',
+        `Un rider se inscribió a tu evento "${event.title}"`,
+        { type, eventId, registrationId },
+      );
+    }
+  }
+
+  /**
+   * Sends FCM notification to the registrant on approval/rejection.
+   */
+  private async sendStatusNotification(
+    userId: string,
+    eventId: string,
+    registrationId: string,
+    type: 'REGISTRATION_APPROVED' | 'REGISTRATION_REJECTED',
+  ): Promise<void> {
+    const [user, event] = await Promise.all([
+      firstValueFrom<UserResult>(
+        this.usersService
+          .send('findOneUser', { id: userId })
+          .pipe(timeout(RPC_TIMEOUT_MS)),
+      ),
+      firstValueFrom<EventResult>(
+        this.eventsService
+          .send('findOneEvent', eventId)
+          .pipe(timeout(RPC_TIMEOUT_MS)),
+      ),
+    ]);
+
+    const title =
+      type === 'REGISTRATION_APPROVED'
+        ? 'Inscripción aprobada'
+        : 'Inscripción rechazada';
+    const body =
+      type === 'REGISTRATION_APPROVED'
+        ? `Tu inscripción al evento "${event.title}" fue aprobada`
+        : `Tu inscripción al evento "${event.title}" fue rechazada`;
+
+    await this.notificationsService.createNotification(userId, type, {
+      eventId,
+      registrationId,
+    });
+
+    if (user.fcmToken) {
+      await this.notificationsService.sendFcm(user.fcmToken, title, body, {
+        type,
+        eventId,
+        registrationId,
+      });
+    }
+  }
+
+  // ── Auth helper ───────────────────────────────────────────────────────────────
+
   private async getAuthenticatedUser(request: AuthenticatedRequest) {
     const email = request.user?.email;
     if (!email) {
-      throw new UnauthorizedException(
-        'Authenticated user email is required',
-      );
+      throw new UnauthorizedException('Authenticated user email is required');
     }
 
     const user = await firstValueFrom(

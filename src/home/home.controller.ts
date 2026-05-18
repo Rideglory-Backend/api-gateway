@@ -1,4 +1,10 @@
-import { Controller, Get, Inject, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { EVENTS_SERVICE, USERS_SERVICE, VEHICLES_SERVICE } from 'config';
 import { Request } from 'express';
@@ -28,7 +34,9 @@ export class HomeController {
           ownerId: user.id,
         }),
       ),
-      firstValueFrom(this.eventsService.send('findUpcomingEvents', { limit: 5 })),
+      firstValueFrom(
+        this.eventsService.send('findUpcomingEvents', { limit: 5 }),
+      ),
     ]);
 
     return {

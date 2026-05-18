@@ -98,10 +98,19 @@ export class TrackingHttpController {
     @Body() body: StartTrackingSessionBodyDto,
     @Req() request: AuthenticatedRequest,
   ) {
-    const authUserId = request.user?.uid;
-    if (!authUserId) {
+    if (!request.user?.uid) {
       throw new UnauthorizedException();
     }
+    const email = request.user?.email;
+    if (!email) {
+      throw new UnauthorizedException();
+    }
+    const dbUser = await firstValueFrom<UserResult>(
+      this.usersService
+        .send('findUserByEmail', { email })
+        .pipe(timeout(RPC_TIMEOUT_MS)),
+    );
+    const authUserId = dbUser.id;
     const result = await firstValueFrom(
       this.eventsService
         .send('trackingStartSession', {
@@ -123,10 +132,19 @@ export class TrackingHttpController {
     @Body() body: StopTrackingSessionBodyDto,
     @Req() request: AuthenticatedRequest,
   ) {
-    const authUserId = request.user?.uid;
-    if (!authUserId) {
+    if (!request.user?.uid) {
       throw new UnauthorizedException();
     }
+    const email = request.user?.email;
+    if (!email) {
+      throw new UnauthorizedException();
+    }
+    const dbUser = await firstValueFrom<UserResult>(
+      this.usersService
+        .send('findUserByEmail', { email })
+        .pipe(timeout(RPC_TIMEOUT_MS)),
+    );
+    const authUserId = dbUser.id;
     const result = await firstValueFrom(
       this.eventsService
         .send('trackingStopSession', {

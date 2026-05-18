@@ -16,7 +16,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
           host: envs.usersMsHost,
         },
       },
-    ])
+    ]),
   ],
 })
-export class UsersModule { }
+export class UsersModule {}

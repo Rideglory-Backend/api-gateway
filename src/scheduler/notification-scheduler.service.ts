@@ -27,8 +27,7 @@ interface MaintenanceRecord {
   vehicleId: string;
   userId: string;
   name: string;
-  nextMaintenanceDate: string | null;
-  receiveDateAlert: boolean;
+  nextDate: string | null;
   reminderSentAt?: string | null;
 }
 

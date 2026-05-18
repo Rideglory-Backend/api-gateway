@@ -16,7 +16,7 @@ import { EVENTS_SERVICE, USERS_SERVICE } from '../config/services';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingRoomsService } from './tracking-rooms.service';
 
-type ClientMeta = { uid: string; eventId: string };
+type ClientMeta = { uid: string; dbUserId: string; eventId: string };
 
 @Public()
 @WebSocketGateway({ path: '/api/tracking/ws' })
@@ -69,7 +69,17 @@ export class TrackingGateway
   ) {
     try {
       const decoded = await this.firebaseAuthService.verifyToken(token);
-      this.clientMeta.set(client, { uid: decoded.uid, eventId });
+      const email = decoded.email;
+      if (!email) {
+        client.close(1008, 'Unauthorized');
+        return;
+      }
+      const dbUser = await firstValueFrom<{ id: string }>(
+        this.usersService
+          .send('findUserByEmail', { email })
+          .pipe(timeout(5_000)),
+      );
+      this.clientMeta.set(client, { uid: decoded.uid, dbUserId: dbUser.id, eventId });
       this.rooms.addClient(eventId, client);
       this.attachMessageHandler(client);
       await this.sendSnapshotToClient(client, eventId);
@@ -144,7 +154,7 @@ export class TrackingGateway
     }
     const payload = data as Record<string, unknown>;
     const userId = payload.userId;
-    if (typeof userId !== 'string' || userId !== meta.uid) {
+    if (typeof userId !== 'string' || userId !== meta.dbUserId) {
       return;
     }
 
@@ -180,7 +190,7 @@ export class TrackingGateway
             speedKmh,
             distanceMeters,
             batteryPercent: Math.trunc(batteryPercent),
-            authUserId: meta.uid,
+            authUserId: meta.dbUserId,
           })
           .pipe(timeout(10_000)),
       );
@@ -215,7 +225,7 @@ export class TrackingGateway
           .send('trackingStopSession', {
             eventId,
             userId,
-            authUserId: meta.uid,
+            authUserId: meta.dbUserId,
           })
           .pipe(timeout(10_000)),
       );
@@ -242,7 +252,7 @@ export class TrackingGateway
     const eventId =
       typeof payload.eventId === 'string' ? payload.eventId : meta.eventId;
     const userId =
-      typeof payload.userId === 'string' ? payload.userId : meta.uid;
+      typeof payload.userId === 'string' ? payload.userId : meta.dbUserId;
 
     if (eventId !== meta.eventId) {
       return;
