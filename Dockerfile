@@ -1,17 +1,14 @@
 # ── Stage 1: BUILD ────────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
-# Mirror monorepo layout so file: deps resolve:
-#   /build/rideglory-contracts/
-#   /build/api-gateway/          ← WORKDIR
-WORKDIR /build/api-gateway
-
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY rideglory-contracts ../rideglory-contracts
+WORKDIR /build
+COPY rideglory-contracts ./rideglory-contracts
 
+WORKDIR /build/api-gateway
 COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY api-gateway/ .
 RUN pnpm build
@@ -19,14 +16,14 @@ RUN pnpm build
 # ── Stage 2: RUNTIME ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime
 
-WORKDIR /build/api-gateway
-
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY rideglory-contracts ../rideglory-contracts
+WORKDIR /build
+COPY rideglory-contracts ./rideglory-contracts
 
+WORKDIR /build/api-gateway
 COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile && pnpm store prune
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts && pnpm store prune
 
 COPY --from=builder /build/api-gateway/dist ./dist
 COPY api-gateway/healthcheck.js ./healthcheck.js
