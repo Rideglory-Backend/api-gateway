@@ -1,32 +1,35 @@
 # ── Stage 1: BUILD ────────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
-WORKDIR /app
+# Mirror monorepo layout so file: deps resolve:
+#   /build/rideglory-contracts/
+#   /build/api-gateway/          ← WORKDIR
+WORKDIR /build/api-gateway
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY package.json pnpm-lock.yaml ./
+COPY rideglory-contracts ../rideglory-contracts
+
+COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-COPY . .
-RUN pnpm exec prisma generate
+COPY api-gateway/ .
 RUN pnpm build
 
 # ── Stage 2: RUNTIME ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime
 
-WORKDIR /app
+WORKDIR /build/api-gateway
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY package.json pnpm-lock.yaml ./
+COPY rideglory-contracts ../rideglory-contracts
+
+COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile && pnpm store prune
 
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/dist ./dist
-COPY prisma ./prisma
-COPY healthcheck.js ./healthcheck.js
+COPY --from=builder /build/api-gateway/dist ./dist
+COPY api-gateway/healthcheck.js ./healthcheck.js
 
 USER node
 
