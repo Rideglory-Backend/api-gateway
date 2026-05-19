@@ -20,7 +20,7 @@ export class PlacesController {
       );
     }
 
-    return this.placesService.autocomplete(trimmedQuery, type);
+    return this.placesService.autocomplete(trimmedQuery, type as 'cities' | 'establishment');
   }
 
   @Get('geocode')
