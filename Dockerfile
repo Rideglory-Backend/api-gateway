@@ -6,6 +6,10 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /build
 COPY rideglory-contracts ./rideglory-contracts
 
+WORKDIR /build/rideglory-contracts
+RUN npm install --ignore-scripts
+RUN npm run build
+
 WORKDIR /build/api-gateway
 COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-scripts
@@ -20,6 +24,10 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /build
 COPY rideglory-contracts ./rideglory-contracts
+
+WORKDIR /build/rideglory-contracts
+RUN npm install --ignore-scripts
+RUN npm run build
 
 WORKDIR /build/api-gateway
 COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
