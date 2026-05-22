@@ -13,7 +13,8 @@ export class FirebaseAuthService {
   async verifyToken(token: string): Promise<DecodedIdToken> {
     try {
       return await getAuth(this.firebaseApp).verifyIdToken(token, true);
-    } catch {
+    } catch (error) {
+      console.error('[FirebaseAuth] verifyIdToken failed:', error);
       throw new UnauthorizedException('Invalid or expired Firebase token');
     }
   }

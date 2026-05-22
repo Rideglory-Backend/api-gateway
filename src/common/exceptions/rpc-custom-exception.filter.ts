@@ -4,15 +4,22 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 
 @Catch()
 export class RpcCustomExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(RpcCustomExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost) {
     const context = host.switchToHttp();
     const response = context.getResponse();
     const normalized = this.normalizeError(exception);
+
+    if (normalized.status >= 500) {
+      this.logger.error(exception);
+    }
 
     return response.status(normalized.status).json({
       statusCode: normalized.status,
