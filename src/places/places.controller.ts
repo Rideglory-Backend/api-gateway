@@ -23,6 +23,15 @@ export class PlacesController {
     return this.placesService.autocomplete(trimmedQuery, type as 'cities' | 'establishment');
   }
 
+  @Get('details')
+  details(@Query('placeId') placeId: string) {
+    const trimmed = placeId?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Query parameter "placeId" is required.');
+    }
+    return this.placesService.getDetails(trimmed);
+  }
+
   @Get('geocode')
   geocode(@Query('q') query: string) {
     const trimmedQuery = query?.trim();

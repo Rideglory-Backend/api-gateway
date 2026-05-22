@@ -14,7 +14,7 @@ interface EnvVars {
   NOTIFICATIONS_MS_HOST: string;
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_SERVICE_ACCOUNT_JSON?: string;
-  MAPBOX_ACCESS_TOKEN?: string;
+  GOOGLE_PLACES_API_KEY?: string;
 }
 
 const envSchema = joi
@@ -32,7 +32,7 @@ const envSchema = joi
     NOTIFICATIONS_MS_HOST: joi.string().required(),
     FIREBASE_PROJECT_ID: joi.string().optional(),
     FIREBASE_SERVICE_ACCOUNT_JSON: joi.string().optional(),
-    MAPBOX_ACCESS_TOKEN: joi.string().optional(),
+    GOOGLE_PLACES_API_KEY: joi.string().optional(),
   })
   .unknown(true);
 
@@ -58,5 +58,5 @@ export const envs = {
   notificationsMsHost: envVars.NOTIFICATIONS_MS_HOST,
   firebaseProjectId: envVars.FIREBASE_PROJECT_ID,
   firebaseServiceAccountJson: envVars.FIREBASE_SERVICE_ACCOUNT_JSON,
-  mapboxAccessToken: envVars.MAPBOX_ACCESS_TOKEN,
+  googlePlacesApiKey: envVars.GOOGLE_PLACES_API_KEY,
 };

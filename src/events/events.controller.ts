@@ -79,9 +79,24 @@ export class EventsController {
     });
   }
 
+  @Patch(':id/publish')
+  async publish(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    return this.eventsService.send('publishEvent', { id, ownerId: user.id });
+  }
+
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.eventsService.send('findOneEvent', id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    return this.eventsService.send('findOneEventForViewer', { id, authUserId: user.id });
   }
 
   @Patch(':id')
