@@ -215,7 +215,7 @@ export class TrackingHttpController {
             user.fcmToken,
             'La rodada ha terminado',
             'El organizador ha finalizado la rodada',
-            { type: 'TRACKING_ENDED', eventId },
+            { type: 'TRACKING_ENDED', eventId, route: `rideglory://events/detail-by-id?id=${eventId}` },
           );
         }
       } catch {

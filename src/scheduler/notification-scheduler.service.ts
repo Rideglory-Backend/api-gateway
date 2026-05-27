@@ -114,7 +114,7 @@ export class NotificationSchedulerService {
         await this.notificationsService.createNotification(
           user.id,
           'MAINTENANCE_DATE_REMINDER',
-          { vehicleId: record.vehicleId, maintenanceId: record.id, maintenanceName: record.name },
+          { vehicleId: record.vehicleId, maintenanceId: record.id, maintenanceName: record.name, route: 'rideglory://maintenances' },
         );
 
         if (user.fcmToken) {
@@ -126,6 +126,7 @@ export class NotificationSchedulerService {
               type: 'MAINTENANCE_DATE_REMINDER',
               vehicleId: record.vehicleId,
               maintenanceId: record.id,
+              route: 'rideglory://maintenances',
             },
           );
         }
@@ -197,6 +198,7 @@ export class NotificationSchedulerService {
             await this.notificationsService.createNotification(userId, 'EVENT_REMINDER', {
               eventId: event.id,
               eventName: event.name,
+              route: `rideglory://events/detail-by-id?id=${event.id}`,
             });
 
             if (user.fcmToken) {
@@ -204,7 +206,7 @@ export class NotificationSchedulerService {
                 user.fcmToken,
                 'Recordatorio de rodada',
                 `La rodada "${event.name}" comienza en 24 horas`,
-                { type: 'EVENT_REMINDER', eventId: event.id, eventName: event.name },
+                { type: 'EVENT_REMINDER', eventId: event.id, eventName: event.name, route: `rideglory://events/detail-by-id?id=${event.id}` },
               );
             }
           } catch {
@@ -276,7 +278,7 @@ export class NotificationSchedulerService {
         await this.notificationsService.createNotification(
           user.id,
           type,
-          payload,
+          { ...payload, route: 'rideglory://garage' },
         );
 
         if (user.fcmToken) {
@@ -301,7 +303,7 @@ export class NotificationSchedulerService {
               user.fcmToken,
               msg.title,
               msg.body,
-              { type, vehicleId: vehicle.id, vehicleName: vehicle.name },
+              { type, vehicleId: vehicle.id, vehicleName: vehicle.name, route: 'rideglory://garage' },
             );
           }
         }

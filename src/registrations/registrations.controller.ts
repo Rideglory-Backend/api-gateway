@@ -37,7 +37,7 @@ type RegistrationResult = {
 
 type EventResult = {
   id: string;
-  title: string;
+  name: string;
   ownerId: string;
 };
 
@@ -227,14 +227,15 @@ export class RegistrationsController {
     await this.notificationsService.createNotification(organizer.id, type, {
       eventId,
       registrationId,
+      route: `rideglory://events/detail-by-id?id=${eventId}`,
     });
 
     if (organizer.fcmToken) {
       await this.notificationsService.sendFcm(
         organizer.fcmToken,
         'Nueva inscripción',
-        `Un rider se inscribió a tu evento "${event.title}"`,
-        { type, eventId, registrationId },
+        `Un rider se inscribió a tu evento "${event.name}"`,
+        { type, eventId, registrationId, route: `rideglory://events/detail-by-id?id=${eventId}` },
       );
     }
   }
@@ -267,12 +268,13 @@ export class RegistrationsController {
         : 'Inscripción rechazada';
     const body =
       type === 'REGISTRATION_APPROVED'
-        ? `Tu inscripción al evento "${event.title}" fue aprobada`
-        : `Tu inscripción al evento "${event.title}" fue rechazada`;
+        ? `Tu inscripción al evento "${event.name}" fue aprobada`
+        : `Tu inscripción al evento "${event.name}" fue rechazada`;
 
     await this.notificationsService.createNotification(userId, type, {
       eventId,
       registrationId,
+      route: `rideglory://events/detail-by-id?id=${eventId}`,
     });
 
     if (user.fcmToken) {
@@ -280,6 +282,7 @@ export class RegistrationsController {
         type,
         eventId,
         registrationId,
+        route: `rideglory://events/detail-by-id?id=${eventId}`,
       });
     }
   }

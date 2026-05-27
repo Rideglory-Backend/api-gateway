@@ -351,6 +351,7 @@ export class TrackingGateway
               fullName,
               latitude: String(latitude ?? ''),
               longitude: String(longitude ?? ''),
+              route: `rideglory://events/detail-by-id?id=${eventId}`,
             },
           );
         }
@@ -363,6 +364,7 @@ export class TrackingGateway
     await this.notificationsService.createNotification(userId, 'SOS_ALERT' as never, {
       eventId,
       userId,
+      route: `rideglory://events/detail-by-id?id=${eventId}`,
     });
   }
 
