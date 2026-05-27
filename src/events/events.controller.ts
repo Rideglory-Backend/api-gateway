@@ -59,8 +59,13 @@ export class EventsController {
   }
 
   @Get()
-  findAll(@Query() filters: EventFilterDto) {
-    return this.eventsService.send('findAllEvents', filters);
+  async findAll(
+    @Query() filters: EventFilterDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    return this.eventsService.send('findAllEvents', { ...filters, authUserId: user.id });
   }
 
   @Get('my')
