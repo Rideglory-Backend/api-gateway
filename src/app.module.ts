@@ -11,6 +11,7 @@ import { RegistrationsModule } from './registrations/registrations.module';
 import { PlacesModule } from './places/places.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { NotificationSchedulerModule } from './scheduler/notification-scheduler.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { NotificationSchedulerModule } from './scheduler/notification-scheduler.
     HomeModule,
     NotificationsModule,
     NotificationSchedulerModule,
+    HealthModule,
   ],
   controllers: [],
   providers: [],
