@@ -201,6 +201,23 @@ export class VehiclesController {
     return soat ?? null;
   }
 
+  /**
+   * DELETE /api/vehicles/:vehicleId/soat
+   * Removes the SOAT record associated with a vehicle.
+   */
+  @Delete(':vehicleId/soat')
+  async deleteSoat(
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    return firstValueFrom(
+      this.vehiclesService
+        .send('deleteSoat', { vehicleId, ownerId: (user as { id: string }).id })
+        .pipe(timeout(10_000)),
+    );
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   private async getAuthenticatedUser(request: AuthenticatedRequest) {
