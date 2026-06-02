@@ -18,6 +18,14 @@ import { TrackingRoomsService } from './tracking-rooms.service';
 
 type ClientMeta = { uid: string; dbUserId: string; eventId: string };
 
+type ActiveSosAlert = {
+  userId: string;
+  fullName: string;
+  latitude: number | null;
+  longitude: number | null;
+  phone?: string;
+};
+
 @Public()
 @WebSocketGateway({ path: '/api/tracking/ws' })
 export class TrackingGateway
@@ -25,6 +33,9 @@ export class TrackingGateway
 {
   private readonly logger = new Logger(TrackingGateway.name);
   private readonly clientMeta = new WeakMap<WebSocket, ClientMeta>();
+  // Active SOS alert per event, so clients that join after the SOS was
+  // triggered receive it (the original broadcast only reaches connected peers).
+  private readonly activeSosByEvent = new Map<string, ActiveSosAlert>();
 
   constructor(
     @Inject(EVENTS_SERVICE) private readonly eventsService: ClientProxy,
@@ -131,6 +142,10 @@ export class TrackingGateway
     }
     if (type === 'tracking.sos') {
       await this.handleSos(client, meta, data);
+      return;
+    }
+    if (type === 'tracking.sos.cancel') {
+      await this.handleSosCancel(client, meta, data);
     }
   }
 
@@ -292,16 +307,21 @@ export class TrackingGateway
     const resolvedLatitude = latitude ?? sosResult.latitude;
     const resolvedLongitude = longitude ?? sosResult.longitude;
 
+    const alert: ActiveSosAlert = {
+      userId,
+      fullName: sosResult.fullName,
+      latitude: resolvedLatitude,
+      longitude: resolvedLongitude,
+      phone: sosResult.phone ?? undefined,
+    };
+
+    // Remember the active SOS so late joiners/reconnects can receive it too.
+    this.activeSosByEvent.set(eventId, alert);
+
     // Broadcast sos.alert to all room members
     this.broadcast(eventId, {
       type: 'tracking.sos.alert',
-      data: {
-        userId,
-        fullName: sosResult.fullName,
-        latitude: resolvedLatitude,
-        longitude: resolvedLongitude,
-        phone: sosResult.phone ?? undefined,
-      },
+      data: alert,
     });
 
     // FCM multicast to approved registrants
@@ -314,6 +334,44 @@ export class TrackingGateway
     ).catch((err: unknown) =>
       this.logger.warn(`SOS FCM multicast failed: ${String(err)}`),
     );
+  }
+
+  private async handleSosCancel(
+    client: WebSocket,
+    meta: ClientMeta,
+    data: unknown,
+  ) {
+    if (typeof data !== 'object' || data === null) {
+      return;
+    }
+    const payload = data as Record<string, unknown>;
+    const eventId =
+      typeof payload.eventId === 'string' ? payload.eventId : meta.eventId;
+    const userId =
+      typeof payload.userId === 'string' ? payload.userId : meta.dbUserId;
+
+    if (eventId !== meta.eventId) {
+      return;
+    }
+
+    try {
+      await firstValueFrom(
+        this.eventsService
+          .send('clearSos', { eventId, userId })
+          .pipe(timeout(10_000)),
+      );
+    } catch (error) {
+      this.logger.warn(`clearSos failed: ${String(error)}`);
+      return;
+    }
+
+    // Drop the cached alert so a new join no longer receives it.
+    this.activeSosByEvent.delete(eventId);
+
+    this.broadcast(eventId, {
+      type: 'tracking.sos.cleared',
+      data: { userId },
+    });
   }
 
   private async sendSosFcmNotifications(
@@ -381,6 +439,16 @@ export class TrackingGateway
       });
     } catch (error) {
       this.logger.warn(`trackingSnapshot failed: ${String(error)}`);
+    }
+
+    // If there's an active SOS for this event, replay it to the joining client
+    // only (not a re-broadcast) so its UI matches the already-connected peers.
+    const activeSos = this.activeSosByEvent.get(eventId);
+    if (activeSos) {
+      this.safeSend(client, {
+        type: 'tracking.sos.alert',
+        data: activeSos,
+      });
     }
   }
 
