@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -27,6 +28,7 @@ import { timeout } from 'rxjs/operators';
 import { Request } from 'express';
 import { OmitType } from '@nestjs/mapped-types';
 import { CreateSoatDto } from './dto/create-soat.dto';
+import { CreateTecnomecanicaDto } from './dto/create-tecnomecanica.dto';
 
 class CreateAuthenticatedVehicleDto extends OmitType(CreateVehicleDto, [
   'ownerId',
@@ -214,6 +216,75 @@ export class VehiclesController {
     return firstValueFrom(
       this.vehiclesService
         .send('deleteSoat', { vehicleId, ownerId: (user as { id: string }).id })
+        .pipe(timeout(10_000)),
+    );
+  }
+
+  // ── RTM (Tecnomecánica) ───────────────────────────────────────────────────
+
+  /**
+   * POST /api/vehicles/:vehicleId/tecnomecanica
+   * Creates or updates the RTM record for a vehicle.
+   */
+  @Post(':vehicleId/tecnomecanica')
+  @HttpCode(HttpStatus.CREATED)
+  async upsertTecnomecanica(
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Body() dto: CreateTecnomecanicaDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    return firstValueFrom(
+      this.vehiclesService
+        .send('upsertTecnomecanica', {
+          vehicleId,
+          ownerId: (user as { id: string }).id,
+          dto,
+        })
+        .pipe(timeout(10_000)),
+    );
+  }
+
+  /**
+   * GET /api/vehicles/:vehicleId/tecnomecanica
+   * Returns the RTM record for a vehicle, or throws 404 if none exists.
+   */
+  @Get(':vehicleId/tecnomecanica')
+  async getTecnomecanica(
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    const rtm = await firstValueFrom(
+      this.vehiclesService
+        .send('findTecnomecanicaByVehicle', {
+          vehicleId,
+          ownerId: (user as { id: string }).id,
+        })
+        .pipe(timeout(10_000)),
+    );
+    if (!rtm) {
+      throw new NotFoundException(`No RTM found for vehicle ${vehicleId}`);
+    }
+    return rtm;
+  }
+
+  /**
+   * DELETE /api/vehicles/:vehicleId/tecnomecanica
+   * Removes the RTM record associated with a vehicle.
+   */
+  @Delete(':vehicleId/tecnomecanica')
+  async deleteTecnomecanica(
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+    return firstValueFrom(
+      this.vehiclesService
+        .send('deleteTecnomecanica', {
+          vehicleId,
+          ownerId: (user as { id: string }).id,
+        })
         .pipe(timeout(10_000)),
     );
   }
