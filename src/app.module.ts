@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { HttpLoggerMiddleware } from './common/middleware/http-logger.middleware';
 import { ScheduleModule } from '@nestjs/schedule';
 import { VehiclesModule } from './vehicles/vehicles.module';
 import { EventsModule } from './events/events.module';
@@ -32,4 +33,8 @@ import { HealthModule } from './health/health.module';
   controllers: [],
   providers: [],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(HttpLoggerMiddleware).forRoutes('*');
+  }
+}
