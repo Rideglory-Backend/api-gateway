@@ -11,6 +11,12 @@ interface SoatRecord {
   expiryDate: Date | string;
 }
 
+interface TecnomecanicaRecord {
+  id: string;
+  vehicleId: string;
+  expiryDate: Date | string;
+}
+
 interface VehicleRecord {
   id: string;
   name: string;
@@ -63,19 +69,39 @@ export class NotificationSchedulerService {
   /** Daily at 09:00 Bogota — SOAT expiring in 30 days */
   @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
   async soatReminder30Days() {
-    await this.sendSoatReminders(30, 'SOAT_30D');
+    await this.sendDocumentExpiryReminders('soat', 30, 'SOAT_30D');
   }
 
   /** Daily at 09:00 Bogota — SOAT expiring in 7 days */
   @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
   async soatReminder7Days() {
-    await this.sendSoatReminders(7, 'SOAT_7D');
+    await this.sendDocumentExpiryReminders('soat', 7, 'SOAT_7D');
   }
 
   /** Daily at 09:00 Bogota — SOAT expiring today */
   @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
   async soatReminderDayOf() {
-    await this.sendSoatReminders(0, 'SOAT_DAY_OF');
+    await this.sendDocumentExpiryReminders('soat', 0, 'SOAT_DAY_OF');
+  }
+
+  // ── RTM (Revisión Técnico-Mecánica) reminders ─────────────────────────────────
+
+  /** Daily at 09:00 Bogota — RTM expiring in 30 days */
+  @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
+  async tecnomecanicaReminder30Days() {
+    await this.sendDocumentExpiryReminders('tecnomecanica', 30, 'TECNOMECANICA_30D');
+  }
+
+  /** Daily at 09:00 Bogota — RTM expiring in 7 days */
+  @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
+  async tecnomecanicaReminder7Days() {
+    await this.sendDocumentExpiryReminders('tecnomecanica', 7, 'TECNOMECANICA_7D');
+  }
+
+  /** Daily at 09:00 Bogota — RTM expiring today */
+  @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
+  async tecnomecanicaReminderDayOf() {
+    await this.sendDocumentExpiryReminders('tecnomecanica', 0, 'TECNOMECANICA_DAY_OF');
   }
 
   // ── Maintenance date reminders ────────────────────────────────────────────────
@@ -228,38 +254,69 @@ export class NotificationSchedulerService {
 
   // ── Internal ──────────────────────────────────────────────────────────────────
 
-  private async sendSoatReminders(
+  private async sendDocumentExpiryReminders(
+    kind: 'soat' | 'tecnomecanica',
     daysUntilExpiry: number,
     type: NotificationType,
   ): Promise<void> {
-    let soatRecords: SoatRecord[];
+    const rpcPattern =
+      kind === 'soat' ? 'findSoatsExpiringIn' : 'findTecnomecanicasExpiringIn';
+
+    let records: SoatRecord[] | TecnomecanicaRecord[];
 
     try {
-      soatRecords = await firstValueFrom<SoatRecord[]>(
+      records = await firstValueFrom<SoatRecord[] | TecnomecanicaRecord[]>(
         this.vehiclesService
-          .send('findSoatsExpiringIn', { daysUntilExpiry })
+          .send(rpcPattern, { daysUntilExpiry })
           .pipe(timeout(RPC_TIMEOUT_MS)),
       );
     } catch (err: unknown) {
       this.logger.error(
-        `${type}: failed to fetch SOAT records: ${String(err)}`,
+        `${type}: failed to fetch records via ${rpcPattern}: ${String(err)}`,
       );
       return;
     }
 
-    this.logger.log(`${type}: found ${soatRecords.length} SOAT(s) expiring`);
+    this.logger.log(`${type}: found ${records.length} record(s) expiring`);
 
-    for (const soat of soatRecords) {
+    const messages: Record<string, { title: string; body: (vehicleName: string) => string }> = {
+      SOAT_30D: {
+        title: 'Tu SOAT vence en 30 días',
+        body: (vehicleName) => `El SOAT de tu moto ${vehicleName} vence en 30 días. ¡Renuévalo a tiempo!`,
+      },
+      SOAT_7D: {
+        title: 'Tu SOAT vence en 7 días',
+        body: (vehicleName) => `El SOAT de tu moto ${vehicleName} vence en 7 días. ¡No lo dejes para último momento!`,
+      },
+      SOAT_DAY_OF: {
+        title: 'Tu SOAT vence hoy',
+        body: (vehicleName) => `El SOAT de tu moto ${vehicleName} vence hoy. Renuévalo cuanto antes.`,
+      },
+      TECNOMECANICA_30D: {
+        title: 'Tu RTM vence en 30 días',
+        body: (vehicleName) => `La revisión técnico-mecánica de tu moto ${vehicleName} vence en 30 días. ¡Sácala a tiempo!`,
+      },
+      TECNOMECANICA_7D: {
+        title: 'Tu RTM vence en 7 días',
+        body: (vehicleName) => `La revisión técnico-mecánica de tu moto ${vehicleName} vence en 7 días. No esperes más.`,
+      },
+      TECNOMECANICA_DAY_OF: {
+        title: 'Tu RTM vence hoy',
+        body: (vehicleName) => `La revisión técnico-mecánica de tu moto ${vehicleName} vence hoy. Preséntala cuanto antes.`,
+      },
+    };
+
+    for (const record of records) {
       try {
         const vehicle = await firstValueFrom<VehicleRecord>(
           this.vehiclesService
-            .send('getVehicleById', { vehicleId: soat.vehicleId })
+            .send('getVehicleById', { vehicleId: record.vehicleId })
             .pipe(timeout(RPC_TIMEOUT_MS)),
         );
 
         if (!vehicle) {
           this.logger.warn(
-            `${type}: vehicle ${soat.vehicleId} not found — skipping`,
+            `${type}: vehicle ${record.vehicleId} not found — skipping`,
           );
           continue;
         }
@@ -270,46 +327,26 @@ export class NotificationSchedulerService {
             .pipe(timeout(RPC_TIMEOUT_MS)),
         );
 
-        const payload = {
-          vehicleId: vehicle.id,
-          vehicleName: vehicle.name,
-        };
-
         await this.notificationsService.createNotification(
           user.id,
           type,
-          { ...payload, route: 'rideglory://garage' },
+          { vehicleId: vehicle.id, vehicleName: vehicle.name, route: 'rideglory://garage' },
         );
 
         if (user.fcmToken) {
-          const messages: Record<string, { title: string; body: string }> = {
-            SOAT_30D: {
-              title: 'Tu SOAT vence en 30 días',
-              body: `El SOAT de tu moto ${vehicle.name} vence en 30 días. ¡Renuévalo a tiempo!`,
-            },
-            SOAT_7D: {
-              title: 'Tu SOAT vence en 7 días',
-              body: `El SOAT de tu moto ${vehicle.name} vence en 7 días. ¡No lo dejes para último momento!`,
-            },
-            SOAT_DAY_OF: {
-              title: 'Tu SOAT vence hoy',
-              body: `El SOAT de tu moto ${vehicle.name} vence hoy. Renuévalo cuanto antes.`,
-            },
-          };
-
           const msg = messages[type];
           if (msg?.title) {
             await this.notificationsService.sendFcm(
               user.fcmToken,
               msg.title,
-              msg.body,
+              msg.body(vehicle.name),
               { type, vehicleId: vehicle.id, vehicleName: vehicle.name, route: 'rideglory://garage' },
             );
           }
         }
       } catch (err: unknown) {
         this.logger.error(
-          `${type}: failed for SOAT ${soat.id}: ${String(err)}`,
+          `${type}: failed for record ${record.id}: ${String(err)}`,
         );
       }
     }

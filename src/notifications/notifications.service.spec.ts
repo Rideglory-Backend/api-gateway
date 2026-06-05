@@ -1,11 +1,61 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
+// ── Mock rxjs firstValueFrom ─────────────────────────────────────────────────
+
+const mockFirstValueFrom = jest.fn().mockResolvedValue(undefined);
+
+jest.mock('rxjs', () => {
+  const actual = jest.requireActual<typeof import('rxjs')>('rxjs');
+  return {
+    ...actual,
+    firstValueFrom: (...args: unknown[]) => mockFirstValueFrom(...args),
+  };
+});
+
+// ── Import after mocking ─────────────────────────────────────────────────────
+
+import { NotificationsService } from './notifications.service';
+
+// ── ClientProxy factory ──────────────────────────────────────────────────────
+
+function makeNotificationsClient() {
+  return {
+    send: jest.fn().mockReturnValue({
+      pipe: jest.fn().mockReturnValue('__observable__'),
+    }),
+  };
+}
+
+// ── Build real NotificationsService instance with mocked client ───────────────
+
+function buildService() {
+  const client = makeNotificationsClient();
+  const service = Object.create(
+    NotificationsService.prototype,
+  ) as NotificationsService;
+  (service as unknown as Record<string, unknown>)['notificationsClient'] =
+    client;
+  return { service, client };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  mockFirstValueFrom.mockReset();
+  mockFirstValueFrom.mockResolvedValue(undefined);
+});
+
 /**
- * Unit tests for NotificationsService — business logic isolated from Prisma.
- * We test the cursor pagination logic and authorization rules.
+ * Tests for NotificationsService — business logic isolated from external deps.
+ *
+ * Three sections:
+ *  1. Cursor pagination logic (pure function extracted to match service impl)
+ *  2. markRead authorization rules (pure function matching service impl)
+ *  3. createNotification / sendFcm — RTM + SOAT type/payload flow tests that
+ *     call the REAL service methods and assert on what the RPC client receives.
  */
 describe('NotificationsService — business logic', () => {
-  // ── Cursor pagination helpers (pure logic extracted for testing) ──────────
+  // ── 1. Cursor pagination helpers (pure logic extracted for testing) ─────────
 
   const paginate = <T extends { id: string }>(
     items: T[],
@@ -61,7 +111,7 @@ describe('NotificationsService — business logic', () => {
     });
   });
 
-  // ── Authorization rules ───────────────────────────────────────────────────
+  // ── 2. Authorization rules ─────────────────────────────────────────────────
 
   describe('markRead authorization', () => {
     const checkOwnership = (
@@ -95,23 +145,179 @@ describe('NotificationsService — business logic', () => {
     });
   });
 
-  // ── FCM payload validation ────────────────────────────────────────────────
+  // ── 3. createNotification — real service flow, RTM + SOAT types ────────────
+  //
+  // These tests call the REAL NotificationsService.createNotification() and
+  // assert that the RPC proxy sends 'notification.create' with the correct
+  // userId, type, and data fields. The payload is derived from what the
+  // service actually sends — not from a local copy.
 
-  describe('notification payload', () => {
-    it('NEW_REGISTRATION payload contains only scalar IDs', () => {
-      const payload = {
-        eventId: 'event-uuid',
-        registrationId: 'reg-uuid',
-      };
-      expect(typeof payload.eventId).toBe('string');
-      expect(typeof payload.registrationId).toBe('string');
-      expect(Object.keys(payload)).toHaveLength(2);
+  describe('createNotification — SOAT reminder types', () => {
+    it('SOAT_30D: sends notification.create RPC with correct type and vehicleId', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-1', 'SOAT_30D', {
+        vehicleId: 'veh-1',
+        vehicleName: 'Mi Honda',
+        route: 'rideglory://garage',
+      });
+
+      expect(client.send).toHaveBeenCalledWith(
+        'notification.create',
+        expect.objectContaining({
+          userId: 'user-1',
+          type: 'SOAT_30D',
+          data: expect.objectContaining({
+            vehicleId: 'veh-1',
+            vehicleName: 'Mi Honda',
+            route: 'rideglory://garage',
+          }),
+        }),
+      );
     });
 
-    it('SOAT reminder payload contains vehicleId and vehicleName', () => {
-      const payload = { vehicleId: 'veh-uuid', vehicleName: 'Mi Honda' };
-      expect(payload.vehicleId).toBeDefined();
-      expect(payload.vehicleName).toBeDefined();
+    it('SOAT_7D: sends notification.create RPC with correct type', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-2', 'SOAT_7D', {
+        vehicleId: 'veh-2',
+        vehicleName: 'Mi Kawasaki',
+        route: 'rideglory://garage',
+      });
+
+      expect(client.send).toHaveBeenCalledWith(
+        'notification.create',
+        expect.objectContaining({ userId: 'user-2', type: 'SOAT_7D' }),
+      );
+    });
+
+    it('SOAT_DAY_OF: sends notification.create RPC with correct type', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-3', 'SOAT_DAY_OF', {
+        vehicleId: 'veh-3',
+        vehicleName: 'Mi Suzuki',
+        route: 'rideglory://garage',
+      });
+
+      expect(client.send).toHaveBeenCalledWith(
+        'notification.create',
+        expect.objectContaining({ userId: 'user-3', type: 'SOAT_DAY_OF' }),
+      );
+    });
+  });
+
+  describe('createNotification — RTM reminder types', () => {
+    it('TECNOMECANICA_30D: sends notification.create RPC with correct type, vehicleId, vehicleName, route', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-1', 'TECNOMECANICA_30D', {
+        vehicleId: 'veh-1',
+        vehicleName: 'Mi Honda',
+        route: 'rideglory://garage',
+      });
+
+      expect(client.send).toHaveBeenCalledWith(
+        'notification.create',
+        expect.objectContaining({
+          userId: 'user-1',
+          type: 'TECNOMECANICA_30D',
+          data: expect.objectContaining({
+            vehicleId: 'veh-1',
+            vehicleName: 'Mi Honda',
+            route: 'rideglory://garage',
+          }),
+        }),
+      );
+    });
+
+    it('TECNOMECANICA_7D: sends notification.create RPC with correct type and payload', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-2', 'TECNOMECANICA_7D', {
+        vehicleId: 'veh-2',
+        vehicleName: 'Mi Kawasaki',
+        route: 'rideglory://garage',
+      });
+
+      expect(client.send).toHaveBeenCalledWith(
+        'notification.create',
+        expect.objectContaining({
+          userId: 'user-2',
+          type: 'TECNOMECANICA_7D',
+          data: expect.objectContaining({
+            vehicleId: 'veh-2',
+            vehicleName: 'Mi Kawasaki',
+            route: 'rideglory://garage',
+          }),
+        }),
+      );
+    });
+
+    it('TECNOMECANICA_DAY_OF: sends notification.create RPC with correct type and payload', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-3', 'TECNOMECANICA_DAY_OF', {
+        vehicleId: 'veh-3',
+        vehicleName: 'Mi Suzuki',
+        route: 'rideglory://garage',
+      });
+
+      expect(client.send).toHaveBeenCalledWith(
+        'notification.create',
+        expect.objectContaining({
+          userId: 'user-3',
+          type: 'TECNOMECANICA_DAY_OF',
+          data: expect.objectContaining({
+            vehicleId: 'veh-3',
+            vehicleName: 'Mi Suzuki',
+            route: 'rideglory://garage',
+          }),
+        }),
+      );
+    });
+
+    it('RTM notification.create RPC is sent with pattern as first argument (not object)', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-1', 'TECNOMECANICA_30D', {
+        vehicleId: 'veh-1',
+        vehicleName: 'Mi Honda',
+        route: 'rideglory://garage',
+      });
+
+      // First argument to client.send must be the string pattern
+      const firstSendCall = (client.send as jest.Mock).mock.calls[0];
+      expect(firstSendCall[0]).toBe('notification.create');
+    });
+  });
+
+  // ── NEW_REGISTRATION (existing type, regression) ──────────────────────────
+
+  describe('createNotification — registration types', () => {
+    it('NEW_REGISTRATION: sends notification.create with scalar IDs in data', async () => {
+      const { service, client } = buildService();
+
+      await service.createNotification('user-1', 'NEW_REGISTRATION', {
+        eventId: 'event-uuid',
+        registrationId: 'reg-uuid',
+      });
+
+      expect(client.send).toHaveBeenCalledWith(
+        'notification.create',
+        expect.objectContaining({
+          userId: 'user-1',
+          type: 'NEW_REGISTRATION',
+          data: expect.objectContaining({
+            eventId: 'event-uuid',
+            registrationId: 'reg-uuid',
+          }),
+        }),
+      );
+      const sentData = (client.send as jest.Mock).mock.calls[0][1]
+        .data as Record<string, unknown>;
+      expect(typeof sentData['eventId']).toBe('string');
+      expect(typeof sentData['registrationId']).toBe('string');
     });
   });
 });
