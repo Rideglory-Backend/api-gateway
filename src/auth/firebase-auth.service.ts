@@ -29,6 +29,7 @@ export class FirebaseAuthService {
     if (serviceAccount) {
       return initializeApp({
         credential: cert(serviceAccount),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
       });
     }
 
@@ -39,7 +40,7 @@ export class FirebaseAuthService {
       );
     }
 
-    return initializeApp({ projectId });
+    return initializeApp({ projectId, storageBucket: process.env.FIREBASE_STORAGE_BUCKET });
   }
 
   private getServiceAccountFromEnv(): Record<string, string> | null {

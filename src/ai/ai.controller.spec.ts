@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { AiController } from './ai.controller';
 import { GeminiService } from './gemini.service';
+import { StorageService } from './storage.service';
 import {
   AiDescriptionRequestDto,
   AiChatRole,
@@ -16,6 +17,11 @@ import {
 
 const mockGeminiService = {
   generateDescription: jest.fn(),
+  generateCover: jest.fn(),
+};
+
+const mockStorageService = {
+  uploadCover: jest.fn(),
 };
 
 const validDto: AiDescriptionRequestDto = {
@@ -37,6 +43,7 @@ describe('AiController', () => {
       controllers: [AiController],
       providers: [
         { provide: GeminiService, useValue: mockGeminiService },
+        { provide: StorageService, useValue: mockStorageService },
       ],
     }).compile();
 
@@ -127,6 +134,23 @@ describe('AiController', () => {
       const result = await controller.generateDescription(dtoWithEmptyHistory);
       expect(result.markdown).toBe(markdown);
       expect(result.remainingGenerations).toBe(-1);
+    });
+  });
+
+  describe('generateCover', () => {
+    const coverDto = { prompt: 'Ruta por los Andes', draftId: '550e8400-e29b-41d4-a716-446655440000' };
+    const fakeRequest = { user: { uid: 'user-123' } } as any;
+
+    it('returns imageUrl and remainingGenerations: -1', async () => {
+      mockGeminiService.generateCover.mockResolvedValue({ buffer: Buffer.from('img'), mimeType: 'image/png' });
+      mockStorageService.uploadCover.mockResolvedValue('https://storage.googleapis.com/bucket/pending/user-123/550e8400-e29b-41d4-a716-446655440000.png');
+
+      const result = await controller.generateCover(coverDto, fakeRequest);
+
+      expect(result.imageUrl).toBe('https://storage.googleapis.com/bucket/pending/user-123/550e8400-e29b-41d4-a716-446655440000.png');
+      expect(result.remainingGenerations).toBe(-1);
+      expect(mockGeminiService.generateCover).toHaveBeenCalledWith(coverDto.prompt);
+      expect(mockStorageService.uploadCover).toHaveBeenCalledWith('user-123', coverDto.draftId, expect.any(Buffer), 'image/png');
     });
   });
 });

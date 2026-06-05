@@ -16,6 +16,7 @@ la emoción y camaradería del mundo motorista. Sé conciso pero impactante.`;
 export class GeminiService {
   private readonly ai: GoogleGenAI;
   private readonly model: string;
+  private readonly imageModel: string;
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -24,6 +25,7 @@ export class GeminiService {
     }
     this.ai = new GoogleGenAI({ apiKey });
     this.model = process.env.GEMINI_TEXT_MODEL ?? 'gemini-2.5-flash';
+    this.imageModel = process.env.GEMINI_IMAGE_MODEL ?? '';
   }
 
   async generateDescription(req: AiDescriptionRequestDto): Promise<string> {
@@ -86,5 +88,24 @@ export class GeminiService {
     }
 
     return text;
+  }
+
+  async generateCover(prompt: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    if (!this.imageModel) {
+      throw new Error('GEMINI_IMAGE_MODEL env var not set');
+    }
+    const response = await this.ai.models.generateContent({
+      model: this.imageModel,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { responseModalities: ['IMAGE'] },
+    });
+    const part = response.candidates?.[0]?.content?.parts?.[0];
+    if (!part?.inlineData?.data || !part.inlineData.mimeType) {
+      throw new Error('Gemini did not return image data');
+    }
+    return {
+      buffer: Buffer.from(part.inlineData.data, 'base64'),
+      mimeType: part.inlineData.mimeType,
+    };
   }
 }
