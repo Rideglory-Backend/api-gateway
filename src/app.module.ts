@@ -13,6 +13,7 @@ import { PlacesModule } from './places/places.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { NotificationSchedulerModule } from './scheduler/notification-scheduler.module';
 import { HealthModule } from './health/health.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { HealthModule } from './health/health.module';
     NotificationsModule,
     NotificationSchedulerModule,
     HealthModule,
+    AiModule,
   ],
   controllers: [],
   providers: [],
