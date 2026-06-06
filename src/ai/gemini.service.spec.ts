@@ -1,4 +1,6 @@
 import { GeminiService } from './gemini.service';
+import { AiErrorCode } from '@rideglory/contracts';
+import { AiDescriptionRequestDto, EventType, AiChatRole } from '@rideglory/contracts';
 
 // Mock @google/genai so real HTTP calls are never made
 const mockGenerateContent = jest.fn();
@@ -110,5 +112,98 @@ describe('GeminiService.generateCover', () => {
       contents: [{ role: 'user', parts: [{ text: 'sunset mountain ride' }] }],
       config: { responseModalities: ['IMAGE'] },
     });
+  });
+
+  it('throws quota_exceeded_project when SDK throws RESOURCE_EXHAUSTED', async () => {
+    process.env.GEMINI_IMAGE_MODEL = 'gemini-2.0-flash-preview-image-generation';
+    const service = new GeminiService();
+
+    mockGenerateContent.mockRejectedValue(
+      new Error('RESOURCE_EXHAUSTED: quota exceeded'),
+    );
+
+    await expect(service.generateCover('make a cover')).rejects.toThrow('quota_exceeded_project');
+  });
+
+  it('throws quota_exceeded_project when SDK throws "Resource has been exhausted"', async () => {
+    process.env.GEMINI_IMAGE_MODEL = 'gemini-2.0-flash-preview-image-generation';
+    const service = new GeminiService();
+
+    mockGenerateContent.mockRejectedValue(
+      new Error('Resource has been exhausted (check quota).'),
+    );
+
+    await expect(service.generateCover('make a cover')).rejects.toThrow('quota_exceeded_project');
+  });
+
+  it('throws safety_blocked when response has SAFETY finishReason', async () => {
+    process.env.GEMINI_IMAGE_MODEL = 'gemini-2.0-flash-preview-image-generation';
+    const service = new GeminiService();
+
+    mockGenerateContent.mockResolvedValue({
+      candidates: [{ finishReason: 'SAFETY', content: { parts: [] } }],
+    });
+
+    await expect(service.generateCover('make a cover')).rejects.toThrow('safety_blocked');
+  });
+
+  it('throws network_error for generic SDK errors', async () => {
+    process.env.GEMINI_IMAGE_MODEL = 'gemini-2.0-flash-preview-image-generation';
+    const service = new GeminiService();
+
+    mockGenerateContent.mockRejectedValue(new Error('Connection refused'));
+
+    await expect(service.generateCover('make a cover')).rejects.toThrow('network_error');
+  });
+});
+
+describe('GeminiService.generateDescription — quota and error mapping', () => {
+  const originalEnv = process.env;
+
+  const validReq: AiDescriptionRequestDto = {
+    eventContext: {
+      title: 'Test',
+      eventType: EventType.TOURISM,
+      city: 'Bogotá',
+    },
+    userMessage: 'genera descripción',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = { ...originalEnv, GEMINI_API_KEY: 'test-key' };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('throws quota_exceeded_project when SDK throws RESOURCE_EXHAUSTED', async () => {
+    const service = new GeminiService();
+    mockGenerateContent.mockRejectedValue(new Error('RESOURCE_EXHAUSTED: quota exceeded'));
+
+    await expect(service.generateDescription(validReq)).rejects.toThrow(
+      AiErrorCode.QUOTA_EXCEEDED_PROJECT,
+    );
+  });
+
+  it('throws quota_exceeded_project when SDK throws "Resource has been exhausted"', async () => {
+    const service = new GeminiService();
+    mockGenerateContent.mockRejectedValue(
+      new Error('Resource has been exhausted (check quota).'),
+    );
+
+    await expect(service.generateDescription(validReq)).rejects.toThrow(
+      AiErrorCode.QUOTA_EXCEEDED_PROJECT,
+    );
+  });
+
+  it('throws network_error for generic SDK errors', async () => {
+    const service = new GeminiService();
+    mockGenerateContent.mockRejectedValue(new Error('Connection timeout'));
+
+    await expect(service.generateDescription(validReq)).rejects.toThrow(
+      AiErrorCode.NETWORK_ERROR,
+    );
   });
 });

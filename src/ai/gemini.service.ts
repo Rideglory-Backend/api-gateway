@@ -70,7 +70,17 @@ export class GeminiService {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : AiErrorCode.NETWORK_ERROR;
-      throw new Error(message === AiErrorCode.SAFETY_BLOCKED ? AiErrorCode.SAFETY_BLOCKED : AiErrorCode.NETWORK_ERROR);
+      if (message === AiErrorCode.SAFETY_BLOCKED) {
+        throw new Error(AiErrorCode.SAFETY_BLOCKED);
+      }
+      if (
+        message.includes('RESOURCE_EXHAUSTED') ||
+        message.includes('Resource has been exhausted') ||
+        (error as { status?: number })?.status === 429
+      ) {
+        throw new Error(AiErrorCode.QUOTA_EXCEEDED_PROJECT);
+      }
+      throw new Error(AiErrorCode.NETWORK_ERROR);
     }
 
     if (
@@ -94,11 +104,40 @@ export class GeminiService {
     if (!this.imageModel) {
       throw new Error('GEMINI_IMAGE_MODEL env var not set');
     }
-    const response = await this.ai.models.generateContent({
-      model: this.imageModel,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: { responseModalities: ['IMAGE'] },
-    });
+
+    let response: Awaited<ReturnType<typeof this.ai.models.generateContent>>;
+    try {
+      response = await this.ai.models.generateContent({
+        model: this.imageModel,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: { responseModalities: ['IMAGE'] },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : AiErrorCode.NETWORK_ERROR;
+      if (
+        message.includes('RESOURCE_EXHAUSTED') ||
+        message.includes('Resource has been exhausted') ||
+        (error as { status?: number })?.status === 429
+      ) {
+        throw new Error(AiErrorCode.QUOTA_EXCEEDED_PROJECT);
+      }
+      if (
+        message.includes('SAFETY') ||
+        message === AiErrorCode.SAFETY_BLOCKED
+      ) {
+        throw new Error(AiErrorCode.SAFETY_BLOCKED);
+      }
+      throw new Error(AiErrorCode.NETWORK_ERROR);
+    }
+
+    if (
+      response.promptFeedback?.blockReason ||
+      response.candidates?.[0]?.finishReason === 'SAFETY'
+    ) {
+      throw new Error(AiErrorCode.SAFETY_BLOCKED);
+    }
+
     const part = response.candidates?.[0]?.content?.parts?.[0];
     if (!part?.inlineData?.data || !part.inlineData.mimeType) {
       throw new Error('Gemini did not return image data');
