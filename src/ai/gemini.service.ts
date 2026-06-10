@@ -6,17 +6,37 @@ import {
   AiErrorCode,
 } from '@rideglory/contracts';
 
-const SYSTEM_PROMPT = `Eres un asistente experto en redacción de eventos de motociclismo para la comunidad colombiana.
-Tu tarea es generar descripciones atractivas, cálidas y entusiastas para eventos de moto en Colombia.
-Escribe en español colombiano, con un tono cercano, apasionado y que invite a la participación.
-Las descripciones deben ser en formato Markdown, bien estructuradas, con emojis relevantes y que resalten
-la emoción y camaradería del mundo motorista. Sé conciso pero impactante.`;
+const DESCRIPTION_MARKER = '{{DESCRIPTION}}';
+const QUESTION_MARKER = '{{QUESTION}}';
+
+const SYSTEM_PROMPT = `Eres un asistente creativo y apasionado para crear descripciones de eventos de motociclismo en Colombia. Tu estilo es vibrante, entusiasta y lleno de personalidad — usas emojis generosamente, titulares llamativos, frases con energía y un tono que le transmite emoción real al lector.
+
+DETECCIÓN DE INTENCIÓN — aplica esta regla antes de responder:
+- Si el mensaje del usuario describe detalles del evento, el tono deseado, aspectos a resaltar, recomendaciones o cualquier información concreta → genera la descripción INMEDIATAMENTE.
+- Si el mensaje es un saludo vacío o completamente sin contexto (ejemplo exacto: "hola", "sí", "ok", "quiero una descripción") → haz máximo 2 preguntas concretas sobre tono y aspectos a destacar.
+
+FORMATO OBLIGATORIO — cada respuesta DEBE comenzar con una de estas marcas en la primera línea:
+- Cuando generas la descripción completa: comienza con "${DESCRIPTION_MARKER}"
+- Cuando haces preguntas: comienza con "${QUESTION_MARKER}"
+
+DESCRIPCIÓN (cuando aplica):
+- Markdown rico: encabezados creativos, negritas para lo importante, listas con íconos, separadores visuales
+- Emojis abundantes y bien ubicados (🏍️🔥⛰️🛣️💨🤘 y los que peguen con el evento)
+- Tono apasionado, coloquial y colombiano — dinámico, informal pero sin groserías ni palabras vulgares
+- Incluye secciones útiles cuando aplique: qué llevar, a quién va dirigido, qué esperar, recomendaciones
+- Entre 150 y 350 palabras — suficiente para emocionar sin aburrir
+- Permite iteraciones: ajusta tono, longitud o secciones si el usuario lo pide
+
+PREGUNTAS (solo cuando el mensaje es realmente vago):
+- Máximo 2 preguntas específicas
+- Tono cálido y entusiasta
+
+El contexto del evento (título, tipo, ciudad, dificultad, fecha) ya está dado. Úsalo directamente para darle vida a la descripción.`;
 
 @Injectable()
 export class GeminiService {
   private readonly ai: GoogleGenAI;
   private readonly model: string;
-  private readonly imageModel: string;
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -25,10 +45,11 @@ export class GeminiService {
     }
     this.ai = new GoogleGenAI({ apiKey });
     this.model = process.env.GEMINI_TEXT_MODEL ?? 'gemini-2.5-flash';
-    this.imageModel = process.env.GEMINI_IMAGE_MODEL ?? '';
   }
 
-  async generateDescription(req: AiDescriptionRequestDto): Promise<string> {
+  async generateDescription(
+    req: AiDescriptionRequestDto,
+  ): Promise<{ text: string; isDescription: boolean }> {
     const { eventContext, history = [], userMessage } = req;
 
     const contextPrefix = `Contexto del evento:
@@ -92,59 +113,17 @@ export class GeminiService {
       throw new Error(AiErrorCode.SAFETY_BLOCKED);
     }
 
-    const text = response.text;
-    if (!text) {
+    const rawText = response.text;
+    if (!rawText) {
       throw new Error(AiErrorCode.SAFETY_BLOCKED);
     }
 
-    return text;
+    const isDescription = rawText.trimStart().startsWith(DESCRIPTION_MARKER);
+    const text = rawText
+      .replace(new RegExp(`^\\s*\\{\\{(DESCRIPTION|QUESTION)\\}\\}\\s*\n?`), '')
+      .trim();
+
+    return { text, isDescription };
   }
 
-  async generateCover(prompt: string): Promise<{ buffer: Buffer; mimeType: string }> {
-    if (!this.imageModel) {
-      throw new Error('GEMINI_IMAGE_MODEL env var not set');
-    }
-
-    let response: Awaited<ReturnType<typeof this.ai.models.generateContent>>;
-    try {
-      response = await this.ai.models.generateContent({
-        model: this.imageModel,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: { responseModalities: ['IMAGE'] },
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : AiErrorCode.NETWORK_ERROR;
-      if (
-        message.includes('RESOURCE_EXHAUSTED') ||
-        message.includes('Resource has been exhausted') ||
-        (error as { status?: number })?.status === 429
-      ) {
-        throw new Error(AiErrorCode.QUOTA_EXCEEDED_PROJECT);
-      }
-      if (
-        message.includes('SAFETY') ||
-        message === AiErrorCode.SAFETY_BLOCKED
-      ) {
-        throw new Error(AiErrorCode.SAFETY_BLOCKED);
-      }
-      throw new Error(AiErrorCode.NETWORK_ERROR);
-    }
-
-    if (
-      response.promptFeedback?.blockReason ||
-      response.candidates?.[0]?.finishReason === 'SAFETY'
-    ) {
-      throw new Error(AiErrorCode.SAFETY_BLOCKED);
-    }
-
-    const part = response.candidates?.[0]?.content?.parts?.[0];
-    if (!part?.inlineData?.data || !part.inlineData.mimeType) {
-      throw new Error('Gemini did not return image data');
-    }
-    return {
-      buffer: Buffer.from(part.inlineData.data, 'base64'),
-      mimeType: part.inlineData.mimeType,
-    };
-  }
 }

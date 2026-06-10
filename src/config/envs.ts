@@ -15,6 +15,7 @@ interface EnvVars {
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_SERVICE_ACCOUNT_JSON?: string;
   GOOGLE_PLACES_API_KEY?: string;
+  DATABASE_URL: string;
 }
 
 const envSchema = joi
@@ -33,6 +34,7 @@ const envSchema = joi
     FIREBASE_PROJECT_ID: joi.string().optional(),
     FIREBASE_SERVICE_ACCOUNT_JSON: joi.string().optional(),
     GOOGLE_PLACES_API_KEY: joi.string().optional(),
+    DATABASE_URL: joi.string().required(),
   })
   .unknown(true);
 
@@ -59,4 +61,5 @@ export const envs = {
   firebaseProjectId: envVars.FIREBASE_PROJECT_ID,
   firebaseServiceAccountJson: envVars.FIREBASE_SERVICE_ACCOUNT_JSON,
   googlePlacesApiKey: envVars.GOOGLE_PLACES_API_KEY,
+  databaseUrl: envVars.DATABASE_URL,
 };

@@ -19,3 +19,15 @@ model Notification {
 
   @@index([userId, createdAt])
 }
+
+model AiUsageQuota {
+  id               String   @id @default(uuid())
+  userId           String
+  date             String   // YYYY-MM-DD UTC
+  descriptionCount Int      @default(0)
+  coverCount       Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([date])
+}

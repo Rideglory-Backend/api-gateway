@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpException,
   HttpStatus,
   Post,
@@ -9,8 +10,6 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
-  AiCoverRequestDto,
-  AiCoverResponseDto,
   AiDescriptionRequestDto,
   AiDescriptionResponseDto,
   AiErrorCode,
@@ -19,7 +18,6 @@ import { Request } from 'express';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { AiQuotaService } from './ai-quota.service';
 import { GeminiService } from './gemini.service';
-import { StorageService } from './storage.service';
 
 type AuthenticatedRequest = Request & { user?: DecodedIdToken };
 
@@ -27,9 +25,20 @@ type AuthenticatedRequest = Request & { user?: DecodedIdToken };
 export class AiController {
   constructor(
     private readonly geminiService: GeminiService,
-    private readonly storageService: StorageService,
     private readonly quotaService: AiQuotaService,
   ) {}
+
+  @Get('quota')
+  async getQuota(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ descriptionRemaining: number }> {
+    const userId = request.user!.uid;
+    const descriptionRemaining = await this.quotaService.getRemainingQuota(
+      userId,
+      'description',
+    );
+    return { descriptionRemaining };
+  }
 
   @Post('description')
   async generateDescription(
@@ -37,10 +46,13 @@ export class AiController {
     @Req() request: AuthenticatedRequest,
   ): Promise<AiDescriptionResponseDto> {
     const userId = request.user!.uid;
-    const remaining = await this.quotaService.checkAndIncrement(userId, 'description');
+
+    // Check limit before generating (throws 429 if exhausted, no increment yet)
+    await this.quotaService.checkLimit(userId, 'description');
+
+    let result: { text: string; isDescription: boolean };
     try {
-      const markdown = await this.geminiService.generateDescription(dto);
-      return { markdown, remainingGenerations: remaining };
+      result = await this.geminiService.generateDescription(dto);
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       if (message === AiErrorCode.SAFETY_BLOCKED) {
@@ -54,31 +66,17 @@ export class AiController {
       }
       throw new ServiceUnavailableException({ error: AiErrorCode.NETWORK_ERROR });
     }
+
+    // Consume quota only when the AI actually generated a description
+    const remainingGenerations = result.isDescription
+      ? await this.quotaService.increment(userId, 'description')
+      : await this.quotaService.getRemainingQuota(userId, 'description');
+
+    return {
+      markdown: result.text,
+      remainingGenerations,
+      isDescription: result.isDescription,
+    };
   }
 
-  @Post('cover')
-  async generateCover(
-    @Body() dto: AiCoverRequestDto,
-    @Req() request: AuthenticatedRequest,
-  ): Promise<AiCoverResponseDto> {
-    const userId = request.user!.uid;
-    const remaining = await this.quotaService.checkAndIncrement(userId, 'cover');
-    try {
-      const { buffer, mimeType } = await this.geminiService.generateCover(dto.prompt);
-      const imageUrl = await this.storageService.uploadCover(userId, dto.draftId, buffer, mimeType);
-      return { imageUrl, remainingGenerations: remaining };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (message === AiErrorCode.SAFETY_BLOCKED) {
-        throw new UnprocessableEntityException({ error: AiErrorCode.SAFETY_BLOCKED });
-      }
-      if (message === AiErrorCode.QUOTA_EXCEEDED_PROJECT) {
-        throw new HttpException(
-          { error: AiErrorCode.QUOTA_EXCEEDED_PROJECT },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-      throw new ServiceUnavailableException({ error: AiErrorCode.NETWORK_ERROR });
-    }
-  }
 }

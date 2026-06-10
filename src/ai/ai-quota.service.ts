@@ -1,52 +1,94 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { getApps } from 'firebase-admin/app';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getRemoteConfig } from 'firebase-admin/remote-config';
 import { AiErrorCode } from '@rideglory/contracts';
+import { envs } from '../config/envs';
 
-export type QuotaType = 'description' | 'cover';
+export type QuotaType = 'description';
 
 interface CachedLimits {
   description: number;
-  cover: number;
-  expireAt: number; // Date.now() ms
+  expireAt: number;
 }
 
 @Injectable()
 export class AiQuotaService {
+  private readonly prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: envs.databaseUrl }) });
   private cachedLimits: CachedLimits | null = null;
 
-  /**
-   * Atomically checks and increments the daily quota for the given user and type.
-   * Throws HttpException(429) if the user has reached their daily limit.
-   * Returns the remaining quota after the increment.
-   */
+  async checkLimit(userId: string, type: QuotaType): Promise<void> {
+    const limits = await this.getLimits();
+    const limit = limits[type];
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const countField =
+      'descriptionCount';
+
+    const row = await this.prisma.aiUsageQuota.findUnique({
+      where: { userId_date: { userId, date: dayKey } },
+    });
+    const count = row ? (row[countField] as number) : 0;
+
+    if (count >= limit) {
+      throw new HttpException(
+        { error: AiErrorCode.QUOTA_EXCEEDED_USER, message: AiErrorCode.QUOTA_EXCEEDED_USER, remaining: 0 },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  async increment(userId: string, type: QuotaType): Promise<number> {
+    const limits = await this.getLimits();
+    const limit = limits[type];
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const countField =
+      'descriptionCount';
+
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.aiUsageQuota.findUnique({
+        where: { userId_date: { userId, date: dayKey } },
+      });
+      const count = row ? (row[countField] as number) : 0;
+
+      await tx.aiUsageQuota.upsert({
+        where: { userId_date: { userId, date: dayKey } },
+        create: { userId, date: dayKey, [countField]: 1 },
+        update: { [countField]: { increment: 1 } },
+      });
+
+      return Math.max(0, limit - (count + 1));
+    });
+  }
+
+  async getRemainingQuota(userId: string, type: QuotaType): Promise<number> {
+    const limits = await this.getLimits();
+    const limit = limits[type];
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const countField =
+      'descriptionCount';
+
+    const row = await this.prisma.aiUsageQuota.findUnique({
+      where: { userId_date: { userId, date: dayKey } },
+    });
+
+    const count = row ? (row[countField] as number) : 0;
+    return Math.max(0, limit - count);
+  }
+
   async checkAndIncrement(userId: string, type: QuotaType): Promise<number> {
     const limits = await this.getLimits();
     const limit = limits[type];
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const countField =
+      'descriptionCount';
 
-    const dayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
-    const db = getFirestore(getApps()[0]);
-    const docRef = db
-      .collection('ai_usage_quotas')
-      .doc(userId)
-      .collection('days')
-      .doc(dayKey);
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.aiUsageQuota.findUnique({
+        where: { userId_date: { userId, date: dayKey } },
+      });
 
-    const countField = type === 'description' ? 'descriptionCount' : 'coverCount';
-
-    const remaining = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(docRef);
-      const now = Timestamp.now();
-
-      let count = 0;
-      let createdAt: Timestamp = now;
-
-      if (snap.exists) {
-        const data = snap.data()!;
-        count = (data[countField] as number | undefined) ?? 0;
-        createdAt = (data['createdAt'] as Timestamp | undefined) ?? now;
-      }
+      const count = row ? (row[countField] as number) : 0;
 
       if (count >= limit) {
         throw new HttpException(
@@ -55,24 +97,14 @@ export class AiQuotaService {
         );
       }
 
-      const expireAt = Timestamp.fromMillis(
-        createdAt.toMillis() + 2 * 24 * 60 * 60 * 1000,
-      );
-
-      tx.set(
-        docRef,
-        {
-          [countField]: FieldValue.increment(1),
-          createdAt,
-          expireAt,
-        },
-        { merge: true },
-      );
+      await tx.aiUsageQuota.upsert({
+        where: { userId_date: { userId, date: dayKey } },
+        create: { userId, date: dayKey, [countField]: 1 },
+        update: { [countField]: { increment: 1 } },
+      });
 
       return limit - (count + 1);
     });
-
-    return remaining;
   }
 
   private async getLimits(): Promise<CachedLimits> {
@@ -84,7 +116,6 @@ export class AiQuotaService {
     const rc = getRemoteConfig(app);
 
     let description = 10;
-    let cover = 5;
 
     try {
       const template = await rc.getTemplate();
@@ -95,19 +126,12 @@ export class AiQuotaService {
         const parsed = parseInt(descParam.defaultValue.value as string, 10);
         if (!isNaN(parsed) && parsed > 0) description = parsed;
       }
-
-      const coverParam = params['ai_cover_daily_limit'];
-      if (coverParam?.defaultValue && 'value' in coverParam.defaultValue) {
-        const parsed = parseInt(coverParam.defaultValue.value as string, 10);
-        if (!isNaN(parsed) && parsed > 0) cover = parsed;
-      }
     } catch {
       // Remote Config unavailable — use fallback values
     }
 
     this.cachedLimits = {
       description,
-      cover,
       expireAt: Date.now() + 5 * 60 * 1000,
     };
 

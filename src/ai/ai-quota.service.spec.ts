@@ -2,149 +2,73 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { AiErrorCode } from '@rideglory/contracts';
 import { AiQuotaService } from './ai-quota.service';
 
-// Mock firebase-admin modules
-const mockGet = jest.fn();
-const mockSet = jest.fn();
-const mockRunTransaction = jest.fn();
-const mockDoc = jest.fn();
-const mockCollection = jest.fn();
+jest.mock('../config/envs', () => ({ envs: { databaseUrl: 'postgresql://test' } }));
+jest.mock('@prisma/adapter-pg', () => ({ PrismaPg: jest.fn() }));
+
+const mockFindUnique = jest.fn();
+const mockUpsert = jest.fn();
+const mockTransaction = jest.fn();
 const mockGetTemplate = jest.fn();
+
+jest.mock('@prisma/client', () => ({
+  PrismaClient: jest.fn().mockImplementation(() => ({
+    $transaction: mockTransaction,
+    aiUsageQuota: { findUnique: mockFindUnique, upsert: mockUpsert },
+  })),
+}));
 
 jest.mock('firebase-admin/app', () => ({
   getApps: jest.fn(() => [{}]),
 }));
 
-jest.mock('firebase-admin/firestore', () => ({
-  getFirestore: jest.fn(() => ({
-    collection: mockCollection,
-    runTransaction: mockRunTransaction,
-  })),
-  FieldValue: {
-    increment: (n: number) => ({ __increment: n }),
-  },
-  Timestamp: {
-    now: () => ({ toMillis: () => Date.now(), seconds: 0, nanoseconds: 0 }),
-    fromMillis: (ms: number) => ({ toMillis: () => ms, seconds: 0, nanoseconds: 0 }),
-  },
-}));
-
 jest.mock('firebase-admin/remote-config', () => ({
-  getRemoteConfig: jest.fn(() => ({
-    getTemplate: mockGetTemplate,
-  })),
+  getRemoteConfig: jest.fn(() => ({ getTemplate: mockGetTemplate })),
 }));
 
 describe('AiQuotaService', () => {
   let service: AiQuotaService;
 
-  const setupCollectionChain = () => {
-    const mockDocRef = {};
-    const mockSubCollection = { doc: jest.fn().mockReturnValue(mockDocRef) };
-    const mockUserDoc = { collection: jest.fn().mockReturnValue(mockSubCollection) };
-    mockCollection.mockReturnValue({ doc: jest.fn().mockReturnValue(mockUserDoc) });
-    return mockDocRef;
+  const setupTransaction = (count: number, field: 'descriptionCount' = 'descriptionCount') => {
+    mockTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
+      const tx = {
+        aiUsageQuota: {
+          findUnique: jest.fn().mockResolvedValue(count > 0 ? { [field]: count } : null),
+          upsert: jest.fn().mockResolvedValue({}),
+        },
+      };
+      return fn(tx);
+    });
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     service = new AiQuotaService();
-
-    // Default: Remote Config returns limits
     mockGetTemplate.mockResolvedValue({
       parameters: {
         ai_description_daily_limit: { defaultValue: { value: '10' } },
-        ai_cover_daily_limit: { defaultValue: { value: '5' } },
       },
     });
   });
 
   describe('checkAndIncrement — description', () => {
-    it('sets expireAt = createdAt + 2 days in tx.set() call', async () => {
-      const mockDocRef = setupCollectionChain();
-      const fixedCreatedAtMs = 1_000_000_000_000; // fixed epoch ms
-      const expectedExpireAtMs = fixedCreatedAtMs + 2 * 24 * 60 * 60 * 1000; // +172800000 ms
-
-      let capturedTx: any;
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({
-            exists: true,
-            data: () => ({
-              descriptionCount: 3,
-              createdAt: { toMillis: () => fixedCreatedAtMs, seconds: 0, nanoseconds: 0 },
-            }),
-          }),
-          set: jest.fn(),
-        };
-        capturedTx = tx;
-        return fn(tx);
-      });
-
-      await service.checkAndIncrement('user-1', 'description');
-
-      expect(capturedTx.set).toHaveBeenCalledWith(
-        mockDocRef,
-        expect.objectContaining({
-          expireAt: expect.objectContaining({ toMillis: expect.any(Function) }),
-        }),
-        { merge: true },
-      );
-      const writtenExpireAt = capturedTx.set.mock.calls[0][1].expireAt;
-      expect(writtenExpireAt.toMillis()).toBe(expectedExpireAtMs);
-    });
-
     it('returns remaining count when under the limit', async () => {
-      setupCollectionChain();
-
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({
-            exists: true,
-            data: () => ({ descriptionCount: 3 }),
-          }),
-          set: jest.fn(),
-        };
-        return fn(tx);
-      });
-
+      setupTransaction(3);
       const remaining = await service.checkAndIncrement('user-1', 'description');
       // limit=10, count=3 → remaining = 10 - 4 = 6
       expect(remaining).toBe(6);
     });
 
     it('returns limit-1 when doc does not exist yet', async () => {
-      setupCollectionChain();
-
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({ exists: false, data: () => null }),
-          set: jest.fn(),
-        };
-        return fn(tx);
-      });
-
+      setupTransaction(0);
       const remaining = await service.checkAndIncrement('user-1', 'description');
       // limit=10, count=0 → remaining = 10 - 1 = 9
       expect(remaining).toBe(9);
     });
 
     it('throws HttpException(429) with quota_exceeded_user when count >= limit', async () => {
-      setupCollectionChain();
+      setupTransaction(10);
 
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({
-            exists: true,
-            data: () => ({ descriptionCount: 10 }),
-          }),
-          set: jest.fn(),
-        };
-        return fn(tx);
-      });
-
-      await expect(service.checkAndIncrement('user-1', 'description')).rejects.toThrow(
-        HttpException,
-      );
+      await expect(service.checkAndIncrement('user-1', 'description')).rejects.toThrow(HttpException);
 
       try {
         await service.checkAndIncrement('user-1', 'description');
@@ -157,86 +81,47 @@ describe('AiQuotaService', () => {
         });
       }
     });
-  });
 
-  describe('checkAndIncrement — cover', () => {
-    it('throws HttpException(429) when cover count >= limit', async () => {
-      setupCollectionChain();
-
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
+    it('calls upsert with increment when under limit', async () => {
+      mockTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
+        const mockUpsertTx = jest.fn().mockResolvedValue({});
         const tx = {
-          get: jest.fn().mockResolvedValue({
-            exists: true,
-            data: () => ({ coverCount: 5 }),
-          }),
-          set: jest.fn(),
+          aiUsageQuota: {
+            findUnique: jest.fn().mockResolvedValue({ descriptionCount: 2 }),
+            upsert: mockUpsertTx,
+          },
         };
-        return fn(tx);
+        const result = await fn(tx);
+        expect(mockUpsertTx).toHaveBeenCalledWith(
+          expect.objectContaining({
+            update: { descriptionCount: { increment: 1 } },
+          }),
+        );
+        return result;
       });
 
-      await expect(service.checkAndIncrement('user-1', 'cover')).rejects.toThrow(
-        HttpException,
-      );
-    });
-
-    it('returns remaining count for cover under the limit', async () => {
-      setupCollectionChain();
-
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({
-            exists: true,
-            data: () => ({ coverCount: 2 }),
-          }),
-          set: jest.fn(),
-        };
-        return fn(tx);
-      });
-
-      const remaining = await service.checkAndIncrement('user-1', 'cover');
-      // limit=5, count=2 → remaining = 5 - 3 = 2
-      expect(remaining).toBe(2);
+      await service.checkAndIncrement('user-1', 'description');
     });
   });
 
   describe('getLimits — Remote Config cache', () => {
     it('uses fallback limits when Remote Config throws', async () => {
-      setupCollectionChain();
       mockGetTemplate.mockRejectedValue(new Error('RC unavailable'));
-
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({ exists: false, data: () => null }),
-          set: jest.fn(),
-        };
-        return fn(tx);
-      });
-
+      setupTransaction(0);
       // With fallback description limit=10: remaining = 10-1 = 9
       const remaining = await service.checkAndIncrement('user-1', 'description');
       expect(remaining).toBe(9);
     });
 
     it('uses parsed Remote Config value when distinct from fallback', async () => {
-      // AC9: RC returns '3' (distinct from fallback 10). With count=0, remaining should be 3-1=2, not 9.
       jest.clearAllMocks();
       service = new AiQuotaService();
       mockGetTemplate.mockResolvedValue({
         parameters: {
           ai_description_daily_limit: { defaultValue: { value: '3' } },
-          ai_cover_daily_limit: { defaultValue: { value: '2' } },
         },
       });
-      setupCollectionChain();
-
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({ exists: false, data: () => null }),
-          set: jest.fn(),
-        };
-        return fn(tx);
-      });
-
+      setupTransaction(0);
       // limit=3 (from RC, not fallback 10), count=0 → remaining = 3 - 1 = 2
       const remaining = await service.checkAndIncrement('user-1', 'description');
       expect(remaining).toBe(2);
@@ -244,20 +129,9 @@ describe('AiQuotaService', () => {
     });
 
     it('caches limits for 5 minutes', async () => {
-      setupCollectionChain();
-
-      mockRunTransaction.mockImplementation(async (fn: (tx: any) => Promise<number>) => {
-        const tx = {
-          get: jest.fn().mockResolvedValue({ exists: false, data: () => null }),
-          set: jest.fn(),
-        };
-        return fn(tx);
-      });
-
-      // Call twice — getTemplate should be called only once
+      setupTransaction(0);
       await service.checkAndIncrement('user-1', 'description');
       await service.checkAndIncrement('user-2', 'description');
-
       expect(mockGetTemplate).toHaveBeenCalledTimes(1);
     });
   });

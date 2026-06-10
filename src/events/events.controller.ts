@@ -21,10 +21,6 @@ import { ClientProxy } from '@nestjs/microservices';
 import { EVENTS_SERVICE, USERS_SERVICE } from '../config/services';
 import { firstValueFrom } from 'rxjs';
 import { Request } from 'express';
-import { ClaudeService } from '../common/claude.service';
-import { UnsplashService } from '../common/unsplash.service';
-import { GenerateCoverDto } from './dto/generate-cover.dto';
-
 type AuthenticatedRequest = Request & {
   user?: {
     email?: string;
@@ -36,22 +32,7 @@ export class EventsController {
   constructor(
     @Inject(EVENTS_SERVICE) private readonly eventsService: ClientProxy,
     @Inject(USERS_SERVICE) private readonly usersService: ClientProxy,
-    private readonly claudeService: ClaudeService,
-    private readonly unsplashService: UnsplashService,
   ) {}
-
-  @Post('generate-cover')
-  async generateCover(
-    @Body() dto: GenerateCoverDto,
-  ): Promise<{ imageUrl: string; source: string; query: string }> {
-    const query = await this.claudeService.generateSearchQuery(
-      dto.title,
-      dto.eventType,
-      dto.city,
-    );
-    const imageUrl = await this.unsplashService.searchPhoto(query);
-    return { imageUrl, source: 'unsplash', query };
-  }
 
   @Post()
   create(@Body() createEventDto: CreateEventDto) {
