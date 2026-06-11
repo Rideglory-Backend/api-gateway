@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
+import * as Sentry from '@sentry/node';
 import { ClsService } from 'nestjs-cls';
 
 @Catch()
@@ -23,6 +24,17 @@ export class RpcCustomExceptionFilter implements ExceptionFilter {
 
     if (normalized.status >= 500) {
       this.logger.error(exception);
+      Sentry.captureException(exception, {
+        tags: { service: 'api-gateway' },
+        extra: { traceId },
+      });
+    } else {
+      Sentry.logger.warn('4xx gateway error', {
+        service: 'api-gateway',
+        status: normalized.status,
+        traceId,
+        message: normalized.message,
+      });
     }
 
     if (traceId) {
