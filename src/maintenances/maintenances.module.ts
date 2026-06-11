@@ -7,35 +7,49 @@ import {
   VEHICLES_SERVICE,
 } from '../config/services';
 import { MaintenancesController } from './maintenances.controller';
+import { ClsService } from 'nestjs-cls';
+import { TracingSerializer } from '@rideglory/common-lib';
 
 @Module({
   controllers: [MaintenancesController],
   providers: [],
   imports: [
-    ClientsModule.register([
+    ClientsModule.registerAsync([
       {
         name: MAINTENANCES_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          port: envs.maintenancesMsPort,
-          host: envs.maintenancesMsHost,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.maintenancesMsPort,
+            host: envs.maintenancesMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
       {
         name: USERS_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          port: envs.usersMsPort,
-          host: envs.usersMsHost,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.usersMsPort,
+            host: envs.usersMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
       {
         name: VEHICLES_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          port: envs.vehiclesMsPort,
-          host: envs.vehiclesMsHost,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.vehiclesMsPort,
+            host: envs.vehiclesMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
     ]),
   ],

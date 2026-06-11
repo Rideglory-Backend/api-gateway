@@ -4,42 +4,60 @@ import { envs } from '../config/envs';
 import { VEHICLES_SERVICE, USERS_SERVICE, EVENTS_SERVICE, MAINTENANCES_SERVICE } from '../config/services';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { NotificationSchedulerService } from './notification-scheduler.service';
+import { ClsService } from 'nestjs-cls';
+import { TracingSerializer } from '@rideglory/common-lib';
 
 @Module({
   imports: [
     NotificationsModule,
-    ClientsModule.register([
+    ClientsModule.registerAsync([
       {
         name: VEHICLES_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          port: envs.vehiclesMsPort,
-          host: envs.vehiclesMsHost,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.vehiclesMsPort,
+            host: envs.vehiclesMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
       {
         name: USERS_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          port: envs.usersMsPort,
-          host: envs.usersMsHost,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.usersMsPort,
+            host: envs.usersMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
       {
         name: EVENTS_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          port: envs.eventsMsPort,
-          host: envs.eventsMsHost,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.eventsMsPort,
+            host: envs.eventsMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
       {
         name: MAINTENANCES_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          port: envs.maintenancesMsPort,
-          host: envs.maintenancesMsHost,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.maintenancesMsPort,
+            host: envs.maintenancesMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
     ]),
   ],

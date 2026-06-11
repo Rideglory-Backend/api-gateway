@@ -7,23 +7,32 @@ import {
   Logger,
 } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
+import { ClsService } from 'nestjs-cls';
 
 @Catch()
 export class RpcCustomExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(RpcCustomExceptionFilter.name);
 
+  constructor(private readonly cls?: ClsService) {}
+
   catch(exception: unknown, host: ArgumentsHost) {
     const context = host.switchToHttp();
     const response = context.getResponse();
     const normalized = this.normalizeError(exception);
+    const traceId: string | undefined = this.cls?.get?.('traceId');
 
     if (normalized.status >= 500) {
       this.logger.error(exception);
     }
 
+    if (traceId) {
+      response.setHeader('x-trace-id', traceId);
+    }
+
     return response.status(normalized.status).json({
       statusCode: normalized.status,
       message: normalized.message,
+      ...(traceId ? { traceId } : {}),
     });
   }
 
