@@ -1,8 +1,11 @@
-// Must be the FIRST import in main.ts — before dotenv/config and @nestjs/core
-// so that Sentry can instrument NestJS correctly.
-// NOTE: Do NOT import `envs` here — envs.ts runs joi validation at module-load
-// time, but dotenv/config is imported on line 2 of main.ts (after this file is
-// fully evaluated). Reading process.env directly avoids the premature crash.
+// Must be the FIRST import in main.ts — before @nestjs/core, so Sentry puede
+// instrumentar NestJS correctamente.
+// Cargamos dotenv AQUÍ (respeta DOTENV_CONFIG_PATH) porque instrument.ts corre
+// antes del `import 'dotenv/config'` de main.ts; sin esto, en dev el SENTRY_DSN
+// del .env todavía no está en process.env e initSentry recibiría dsn=undefined.
+// En prod las env vars son reales del entorno → dotenv es inocuo (idempotente).
+// NOTE: no importar `envs` aquí — su joi corre en module-load y crashea temprano.
+import 'dotenv/config';
 import { initSentry } from '@rideglory/common-lib';
 
 const sentryDsn = process.env['SENTRY_DSN'];
