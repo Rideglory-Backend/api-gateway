@@ -8,27 +8,42 @@ import { TrackingBroadcaster } from './tracking-broadcaster.service';
 import { TrackingGateway } from './tracking.gateway';
 import { TrackingHttpController } from './tracking-http.controller';
 import { TrackingRoomsService } from './tracking-rooms.service';
+import { ClsService } from 'nestjs-cls';
+import { TracingSerializer } from '@rideglory/common-lib';
+
+// TODO(observability-phase2): WebSocket channel (/tracking/ws) does not
+// carry x-request-id headers; tracing via WS events is out of scope for
+// Phase 1.  Phase 2 (Sentry) should evaluate sentry-trace propagation over
+// the WS protocol or fallback to session-level correlation.
 
 @Module({
   imports: [
     AuthModule,
     NotificationsModule,
-    ClientsModule.register([
+    ClientsModule.registerAsync([
       {
         name: EVENTS_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          host: envs.eventsMsHost,
-          port: envs.eventsMsPort,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            host: envs.eventsMsHost,
+            port: envs.eventsMsPort,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
       {
         name: USERS_SERVICE,
-        transport: Transport.TCP,
-        options: {
-          host: envs.usersMsHost,
-          port: envs.usersMsPort,
-        },
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            host: envs.usersMsHost,
+            port: envs.usersMsPort,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
       },
     ]),
   ],

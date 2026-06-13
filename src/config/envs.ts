@@ -16,6 +16,9 @@ interface EnvVars {
   FIREBASE_SERVICE_ACCOUNT_JSON?: string;
   GOOGLE_PLACES_API_KEY?: string;
   DATABASE_URL: string;
+  SENTRY_DSN?: string;
+  SENTRY_TRACES_SAMPLE_RATE?: number;
+  SENTRY_DEV_VERIFY?: string;
 }
 
 const envSchema = joi
@@ -35,6 +38,9 @@ const envSchema = joi
     FIREBASE_SERVICE_ACCOUNT_JSON: joi.string().optional(),
     GOOGLE_PLACES_API_KEY: joi.string().optional(),
     DATABASE_URL: joi.string().required(),
+    SENTRY_DSN: joi.string().uri().optional(),
+    SENTRY_TRACES_SAMPLE_RATE: joi.number().min(0).max(1).optional(),
+    SENTRY_DEV_VERIFY: joi.string().optional(),
   })
   .unknown(true);
 
@@ -62,4 +68,7 @@ export const envs = {
   firebaseServiceAccountJson: envVars.FIREBASE_SERVICE_ACCOUNT_JSON,
   googlePlacesApiKey: envVars.GOOGLE_PLACES_API_KEY,
   databaseUrl: envVars.DATABASE_URL,
+  sentryDsn: envVars.SENTRY_DSN,
+  sentryTracesSampleRate: envVars.SENTRY_TRACES_SAMPLE_RATE,
+  sentryDevVerify: envVars.SENTRY_DEV_VERIFY,
 };

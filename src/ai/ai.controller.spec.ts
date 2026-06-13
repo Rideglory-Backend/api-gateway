@@ -35,7 +35,6 @@ const validDto: AiDescriptionRequestDto = {
   eventContext: {
     title: 'Ruta de los Andes',
     eventType: EventType.TOURISM,
-    city: 'Medellín',
   },
   userMessage: 'Genera una descripción emocionante para este evento.',
 };
@@ -176,7 +175,7 @@ describe('AiController', () => {
     it('throws BadRequestException when eventContext.title is missing', async () => {
       const pipe = new ValidationPipe({ whitelist: true, transform: true });
       const dto = {
-        eventContext: { eventType: EventType.TOURISM, city: 'Medellín' },
+        eventContext: { eventType: EventType.TOURISM },
         userMessage: 'Genera una descripción.',
       };
 
