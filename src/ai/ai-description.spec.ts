@@ -40,7 +40,6 @@ describe('AiDescriptionRequestDto validation — history > 10', () => {
       eventContext: {
         title: 'Test Event',
         eventType: EventType.TOURISM,
-        city: 'Bogotá',
       },
       userMessage: 'Test',
       history: Array.from({ length: 11 }, (_, i) => ({
@@ -60,7 +59,6 @@ describe('AiDescriptionRequestDto validation — history > 10', () => {
       eventContext: {
         title: 'Test Event',
         eventType: EventType.TOURISM,
-        city: 'Bogotá',
       },
       userMessage: 'Test',
       history: Array.from({ length: 10 }, (_, i) => ({
@@ -84,7 +82,6 @@ describe('GeminiService.generateDescription — happy path and safety', () => {
     eventContext: {
       title: 'Test Event',
       eventType: EventType.TOURISM,
-      city: 'Bogotá',
     },
     userMessage: 'genera descripción',
   };

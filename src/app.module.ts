@@ -47,6 +47,10 @@ function resolveTraceId(req: IncomingRequest): string {
         // in sync by this setup hook — single source of truth.
         setup: (cls: ClsService, req: IncomingRequest) => {
           cls.set('traceId', resolveTraceId(req));
+          const sentryTrace = req.headers['sentry-trace'];
+          if (sentryTrace) cls.set('sentryTrace', sentryTrace);
+          const baggage = req.headers['baggage'];
+          if (baggage) cls.set('baggage', baggage);
         },
       },
     }),

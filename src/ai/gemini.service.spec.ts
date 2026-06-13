@@ -17,7 +17,6 @@ describe('GeminiService.generateDescription — quota and error mapping', () => 
     eventContext: {
       title: 'Test',
       eventType: EventType.TOURISM,
-      city: 'Bogotá',
     },
     userMessage: 'genera descripción',
   };

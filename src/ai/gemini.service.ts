@@ -54,8 +54,7 @@ export class GeminiService {
 
     const contextPrefix = `Contexto del evento:
 - Título: ${eventContext.title}
-- Tipo: ${eventContext.eventType}
-- Ciudad: ${eventContext.city}${eventContext.difficulty ? `\n- Dificultad: ${eventContext.difficulty}` : ''}${eventContext.startDate ? `\n- Fecha: ${eventContext.startDate}` : ''}
+- Tipo: ${eventContext.eventType}${eventContext.difficulty ? `\n- Dificultad: ${eventContext.difficulty}` : ''}${eventContext.startDate ? `\n- Fecha: ${eventContext.startDate}` : ''}
 
 `;
 
