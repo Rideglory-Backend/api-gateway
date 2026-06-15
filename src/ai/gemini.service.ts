@@ -88,6 +88,7 @@ export class GeminiService {
     try {
       response = await Promise.race([geminiCall, timeoutPromise]);
     } catch (error) {
+      console.error('[GeminiService] generateContent error:', error);
       const message =
         error instanceof Error ? error.message : AiErrorCode.NETWORK_ERROR;
       if (message === AiErrorCode.SAFETY_BLOCKED) {
