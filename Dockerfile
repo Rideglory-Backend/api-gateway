@@ -20,6 +20,7 @@ COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY api-gateway/ .
+RUN pnpm exec prisma generate
 RUN pnpm build
 
 # ── Stage 2: RUNTIME ──────────────────────────────────────────────────────────
