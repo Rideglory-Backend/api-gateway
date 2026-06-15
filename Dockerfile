@@ -29,16 +29,9 @@ FROM node:22-alpine AS runtime
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /build
-COPY rideglory-contracts ./rideglory-contracts
-COPY rideglory-common-lib ./rideglory-common-lib
-
-WORKDIR /build/rideglory-contracts
-RUN npm install --ignore-scripts
-RUN npm run build
-
-WORKDIR /build/rideglory-common-lib
-RUN npm install --ignore-scripts
-RUN npm run build
+# Reutilizar los paquetes ya compilados del builder (no reconstruir)
+COPY --from=builder /build/rideglory-contracts ./rideglory-contracts
+COPY --from=builder /build/rideglory-common-lib ./rideglory-common-lib
 
 WORKDIR /build/api-gateway
 COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
