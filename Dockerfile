@@ -45,6 +45,7 @@ COPY api-gateway/package.json api-gateway/pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts && pnpm store prune
 
 COPY --from=builder /build/api-gateway/dist ./dist
+COPY --from=builder /build/api-gateway/node_modules/.prisma ./node_modules/.prisma
 COPY api-gateway/healthcheck.js ./healthcheck.js
 
 USER node
