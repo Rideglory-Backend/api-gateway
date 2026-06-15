@@ -16,7 +16,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { NotificationSchedulerModule } from './scheduler/notification-scheduler.module';
 import { HealthModule } from './health/health.module';
 import { AiModule } from './ai/ai.module';
-import { PiiRedactInterceptor, pinoHttpOptions } from '@rideglory/common-lib';
+import { pinoHttpOptions } from '@rideglory/common-lib';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 
 type IncomingRequest = { headers: Record<string, string | undefined> };
@@ -70,7 +70,6 @@ function resolveTraceId(req: IncomingRequest): string {
   ],
   controllers: [],
   providers: [
-    { provide: APP_INTERCEPTOR, useClass: PiiRedactInterceptor },
     { provide: APP_INTERCEPTOR, useClass: HttpLoggingInterceptor },
   ],
 })

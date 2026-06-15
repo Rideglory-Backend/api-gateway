@@ -39,7 +39,7 @@ describe('AiDescriptionRequestDto validation — history > 10', () => {
     const dto = {
       eventContext: {
         title: 'Test Event',
-        eventType: EventType.TOURISM,
+        eventType: EventType.ON_ROAD,
       },
       userMessage: 'Test',
       history: Array.from({ length: 11 }, (_, i) => ({
@@ -58,7 +58,7 @@ describe('AiDescriptionRequestDto validation — history > 10', () => {
     const dto = {
       eventContext: {
         title: 'Test Event',
-        eventType: EventType.TOURISM,
+        eventType: EventType.ON_ROAD,
       },
       userMessage: 'Test',
       history: Array.from({ length: 10 }, (_, i) => ({
@@ -81,7 +81,7 @@ describe('GeminiService.generateDescription — happy path and safety', () => {
   const validReq: AiDescriptionRequestDto = {
     eventContext: {
       title: 'Test Event',
-      eventType: EventType.TOURISM,
+      eventType: EventType.ON_ROAD,
     },
     userMessage: 'genera descripción',
   };

@@ -16,7 +16,7 @@ describe('GeminiService.generateDescription — quota and error mapping', () => 
   const validReq: AiDescriptionRequestDto = {
     eventContext: {
       title: 'Test',
-      eventType: EventType.TOURISM,
+      eventType: EventType.ON_ROAD,
     },
     userMessage: 'genera descripción',
   };

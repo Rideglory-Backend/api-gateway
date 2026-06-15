@@ -34,7 +34,7 @@ const mockQuotaService = {
 const validDto: AiDescriptionRequestDto = {
   eventContext: {
     title: 'Ruta de los Andes',
-    eventType: EventType.TOURISM,
+    eventType: EventType.ON_ROAD,
   },
   userMessage: 'Genera una descripción emocionante para este evento.',
 };
@@ -175,7 +175,7 @@ describe('AiController', () => {
     it('throws BadRequestException when eventContext.title is missing', async () => {
       const pipe = new ValidationPipe({ whitelist: true, transform: true });
       const dto = {
-        eventContext: { eventType: EventType.TOURISM },
+        eventContext: { eventType: EventType.ON_ROAD },
         userMessage: 'Genera una descripción.',
       };
 

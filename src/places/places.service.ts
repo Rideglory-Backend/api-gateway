@@ -17,16 +17,19 @@ export interface PlaceSuggestion {
   longitude: number | null;
 }
 
-// Matches "lng,lat" format sent by MapLocationPickerModal (e.g. "-74.0721,4.7110")
+// Matches "lng,lat" format sent by the pick-mode reverse geocode call.
 const COORDINATE_RE = /^(-?\d{1,3}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)$/;
+
+const MAPBOX_GEOCODING_BASE = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
+const GOOGLE_PLACES_BASE = 'https://maps.googleapis.com/maps/api/place';
 
 @Injectable()
 export class PlacesService {
   async autocomplete(query: string, type: PlaceType): Promise<PlaceSuggestion[]> {
     if (type === 'establishment') {
-      return this.autocompleteEstablishment(query);
+      return this.autocompleteWithGoogle(query);
     }
-    // Cities: local dataset, no external API needed
+    // Cities: local dataset, no external API needed.
     return searchCities(query.trim()).map((name) => ({
       name,
       placeId: null,
@@ -35,16 +38,22 @@ export class PlacesService {
     }));
   }
 
-  private async autocompleteEstablishment(query: string): Promise<PlaceSuggestion[]> {
-    const apiKey = envs.googlePlacesApiKey;
-    if (!apiKey) return [];
+  // Google Places Autocomplete — mejor cobertura de POIs y comercios en Colombia.
+  private async autocompleteWithGoogle(query: string): Promise<PlaceSuggestion[]> {
+    const key = envs.googlePlacesApiKey;
+    if (!key) return [];
 
-    const encoded = encodeURIComponent(query);
-    const uri = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encoded}&key=${apiKey}&language=es&components=country:co&types=establishment`;
+    const params = new URLSearchParams({
+      input: query,
+      key,
+      language: 'es',
+      components: 'country:co',
+      types: 'establishment',
+    });
 
     let response: Response;
     try {
-      response = await fetch(uri);
+      response = await fetch(`${GOOGLE_PLACES_BASE}/autocomplete/json?${params}`);
     } catch {
       return [];
     }
@@ -53,15 +62,19 @@ export class PlacesService {
 
     const body = (await response.json()) as {
       status?: string;
-      predictions?: Array<{ description?: string; place_id?: string }>;
+      predictions?: Array<{
+        place_id?: string;
+        description?: string;
+        structured_formatting?: { main_text?: string };
+      }>;
     };
 
     if (body.status !== 'OK' && body.status !== 'ZERO_RESULTS') return [];
 
     return (body.predictions ?? [])
-      .slice(0, 5)
       .map((p) => ({
-        name: p.description ?? '',
+        // Las coordenadas se obtienen en getDetails() — Google Autocomplete no las incluye.
+        name: p.description ?? p.structured_formatting?.main_text ?? '',
         placeId: p.place_id ?? null,
         latitude: null,
         longitude: null,
@@ -69,20 +82,26 @@ export class PlacesService {
       .filter((s) => Boolean(s.name));
   }
 
+  // Google Places Details — devuelve coordenadas exactas a partir del place_id.
   async getDetails(placeId: string): Promise<GeocodeResult> {
-    const apiKey = envs.googlePlacesApiKey;
-    if (!apiKey) {
+    const key = envs.googlePlacesApiKey;
+    if (!key) {
       throw new HttpException(
         { code: 'GEOCODE_API_NOT_CONFIGURED', message: 'Google Places API key is not configured.' },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
 
-    const uri = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=geometry,formatted_address&key=${apiKey}&language=es`;
+    const params = new URLSearchParams({
+      place_id: placeId,
+      key,
+      language: 'es',
+      fields: 'geometry,formatted_address,name',
+    });
 
     let response: Response;
     try {
-      response = await fetch(uri);
+      response = await fetch(`${GOOGLE_PLACES_BASE}/details/json?${params}`);
     } catch {
       throw new HttpException(
         { code: 'GEOCODE_UPSTREAM_ERROR', message: 'Google Places Details request failed.' },
@@ -92,7 +111,7 @@ export class PlacesService {
 
     if (!response.ok) {
       throw new HttpException(
-        { code: 'GEOCODE_UPSTREAM_ERROR', message: 'Google Places Details returned a non-200 response.' },
+        { code: 'GEOCODE_UPSTREAM_ERROR', message: `Google Places Details returned status ${response.status}.` },
         HttpStatus.BAD_GATEWAY,
       );
     }
@@ -102,30 +121,22 @@ export class PlacesService {
       result?: {
         geometry?: { location?: { lat?: number; lng?: number } };
         formatted_address?: string;
+        name?: string;
       };
     };
 
-    if (body.status !== 'OK' || !body.result) {
+    if (body.status !== 'OK' || !body.result?.geometry?.location) {
       throw new HttpException(
         { code: 'GEOCODE_NOT_FOUND', message: `No result found for place_id: ${placeId}` },
         HttpStatus.NOT_FOUND,
       );
     }
 
-    const lat = body.result.geometry?.location?.lat;
-    const lng = body.result.geometry?.location?.lng;
-
-    if (lat == null || lng == null) {
-      throw new HttpException(
-        { code: 'GEOCODE_NOT_FOUND', message: `No coordinates found for place_id: ${placeId}` },
-        HttpStatus.NOT_FOUND,
-      );
-    }
-
+    const loc = body.result.geometry.location;
     return {
-      latitude: lat,
-      longitude: lng,
-      formattedAddress: body.result.formatted_address ?? placeId,
+      latitude: loc.lat!,
+      longitude: loc.lng!,
+      formattedAddress: body.result.formatted_address ?? body.result.name ?? placeId,
     };
   }
 
@@ -134,89 +145,79 @@ export class PlacesService {
     if (coordMatch) {
       const lng = parseFloat(coordMatch[1]);
       const lat = parseFloat(coordMatch[2]);
-      return this.reverseGeocodeWithGoogle(lat, lng);
+      return this.reverseGeocode(lng, lat);
     }
-    return this.forwardGeocodeWithGoogle(address);
+    return this.forwardGeocode(address);
   }
 
-  private async forwardGeocodeWithGoogle(address: string): Promise<GeocodeResult> {
-    const apiKey = envs.googlePlacesApiKey;
-    if (!apiKey) {
+  private async forwardGeocode(address: string): Promise<GeocodeResult> {
+    const token = envs.mapboxAccessToken;
+    if (!token) {
       throw new HttpException(
-        { code: 'GEOCODE_API_NOT_CONFIGURED', message: 'Google Places API key is not configured.' },
+        { code: 'GEOCODE_API_NOT_CONFIGURED', message: 'Mapbox access token is not configured.' },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
 
     const encoded = encodeURIComponent(address);
-    const uri = `https://maps.googleapis.com/maps/api/geocode/json?address=${encoded}&key=${apiKey}&language=es&region=co`;
-    return this.parseGoogleGeocodeResponse(uri, address);
+    const uri = `${MAPBOX_GEOCODING_BASE}/${encoded}.json?access_token=${token}&limit=1&language=es&country=co`;
+    return this.parseMapboxGeocodeResponse(uri, address);
   }
 
-  private async reverseGeocodeWithGoogle(lat: number, lng: number): Promise<GeocodeResult> {
-    const apiKey = envs.googlePlacesApiKey;
-    if (!apiKey) {
+  private async reverseGeocode(lng: number, lat: number): Promise<GeocodeResult> {
+    const token = envs.mapboxAccessToken;
+    if (!token) {
       throw new HttpException(
-        { code: 'GEOCODE_API_NOT_CONFIGURED', message: 'Google Places API key is not configured.' },
+        { code: 'GEOCODE_API_NOT_CONFIGURED', message: 'Mapbox access token is not configured.' },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
 
-    const uri = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}&language=es`;
-    return this.parseGoogleGeocodeResponse(uri, `${lng},${lat}`);
+    // Mapbox Geocoding v5 reverse geocode: siempre retorna al menos una feature
+    // (país/región/ciudad) — nunca ZERO_RESULTS como Google.
+    const uri =
+      `${MAPBOX_GEOCODING_BASE}/${lng},${lat}.json` +
+      `?access_token=${token}&limit=1&language=es&types=address,poi,locality,place,district,region`;
+    return this.parseMapboxGeocodeResponse(uri, `${lng},${lat}`);
   }
 
-  private async parseGoogleGeocodeResponse(
-    uri: string,
-    originalQuery: string,
-  ): Promise<GeocodeResult> {
+  private async parseMapboxGeocodeResponse(uri: string, originalQuery: string): Promise<GeocodeResult> {
     let response: Response;
     try {
       response = await fetch(uri);
     } catch {
       throw new HttpException(
-        { code: 'GEOCODE_UPSTREAM_ERROR', message: 'Google Geocoding request failed.' },
+        { code: 'GEOCODE_UPSTREAM_ERROR', message: 'Mapbox Geocoding request failed.' },
         HttpStatus.BAD_GATEWAY,
       );
     }
 
     if (!response.ok) {
       throw new HttpException(
-        { code: 'GEOCODE_UPSTREAM_ERROR', message: 'Google Geocoding returned a non-200 response.' },
+        { code: 'GEOCODE_UPSTREAM_ERROR', message: `Mapbox Geocoding returned status ${response.status}.` },
         HttpStatus.BAD_GATEWAY,
       );
     }
 
     const body = (await response.json()) as {
-      status?: string;
-      results?: Array<{
-        geometry?: { location?: { lat?: number; lng?: number } };
-        formatted_address?: string;
+      features?: Array<{
+        center?: [number, number];
+        place_name?: string;
       }>;
     };
 
-    if (body.status !== 'OK' || !body.results?.length) {
+    const feature = body.features?.[0];
+    if (!feature?.center) {
       throw new HttpException(
         { code: 'GEOCODE_NOT_FOUND', message: `No result found for: ${originalQuery}` },
         HttpStatus.NOT_FOUND,
       );
     }
 
-    const result = body.results[0];
-    const lat = result.geometry?.location?.lat;
-    const lng = result.geometry?.location?.lng;
-
-    if (lat == null || lng == null) {
-      throw new HttpException(
-        { code: 'GEOCODE_NOT_FOUND', message: `No coordinates found for: ${originalQuery}` },
-        HttpStatus.NOT_FOUND,
-      );
-    }
-
     return {
-      latitude: lat,
-      longitude: lng,
-      formattedAddress: result.formatted_address ?? originalQuery,
+      longitude: feature.center[0],
+      latitude: feature.center[1],
+      formattedAddress: feature.place_name ?? originalQuery,
     };
   }
 }
