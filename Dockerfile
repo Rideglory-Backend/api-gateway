@@ -5,8 +5,13 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /build
 COPY rideglory-contracts ./rideglory-contracts
+COPY rideglory-common-lib ./rideglory-common-lib
 
 WORKDIR /build/rideglory-contracts
+RUN npm install --ignore-scripts
+RUN npm run build
+
+WORKDIR /build/rideglory-common-lib
 RUN npm install --ignore-scripts
 RUN npm run build
 
@@ -24,8 +29,13 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /build
 COPY rideglory-contracts ./rideglory-contracts
+COPY rideglory-common-lib ./rideglory-common-lib
 
 WORKDIR /build/rideglory-contracts
+RUN npm install --ignore-scripts
+RUN npm run build
+
+WORKDIR /build/rideglory-common-lib
 RUN npm install --ignore-scripts
 RUN npm run build
 
