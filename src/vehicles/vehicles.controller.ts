@@ -100,6 +100,43 @@ export class VehiclesController {
       );
   }
 
+  @Delete('my/:vehicleId')
+  async softDeleteMyVehicle(
+    @Req() request: AuthenticatedRequest,
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+  ) {
+    const user = await this.getAuthenticatedUser(request);
+
+    await firstValueFrom(
+      this.maintenancesService
+        .send('softDeleteMaintenancesByVehicleId', { vehicleId })
+        .pipe(
+          timeout(15_000),
+          catchError((error) => {
+            throw new RpcException({
+              message: error?.message ?? 'Failed to soft-delete vehicle maintenances',
+              status: HttpStatus.BAD_GATEWAY,
+            });
+          }),
+        ),
+    );
+
+    await firstValueFrom(
+      this.vehiclesService
+        .send('softDeleteVehicle', { vehicleId, ownerId: user.id })
+        .pipe(
+          catchError((error) => {
+            throw new RpcException({
+              message: error.message,
+              status: error?.status ?? HttpStatus.NOT_FOUND,
+            });
+          }),
+        ),
+    );
+
+    return { message: 'Vehicle deleted successfully', status: HttpStatus.OK };
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.vehiclesService.send('findOneVehicle', { id }).pipe(
