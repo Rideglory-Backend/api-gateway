@@ -19,7 +19,6 @@ interface EnvVars {
   DATABASE_URL: string;
   SENTRY_DSN?: string;
   SENTRY_TRACES_SAMPLE_RATE?: number;
-  SENTRY_DEV_VERIFY?: string;
 }
 
 const envSchema = joi
@@ -42,7 +41,6 @@ const envSchema = joi
     DATABASE_URL: joi.string().required(),
     SENTRY_DSN: joi.string().uri().optional(),
     SENTRY_TRACES_SAMPLE_RATE: joi.number().min(0).max(1).optional(),
-    SENTRY_DEV_VERIFY: joi.string().optional(),
   })
   .unknown(true);
 
@@ -73,5 +71,4 @@ export const envs = {
   databaseUrl: envVars.DATABASE_URL,
   sentryDsn: envVars.SENTRY_DSN,
   sentryTracesSampleRate: envVars.SENTRY_TRACES_SAMPLE_RATE,
-  sentryDevVerify: envVars.SENTRY_DEV_VERIFY,
 };
