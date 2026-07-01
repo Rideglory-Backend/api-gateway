@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Inject,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -25,7 +26,10 @@ export class HomeController {
   ) {}
 
   @Get()
-  async getHomeData(@Req() request: AuthenticatedRequest) {
+  async getHomeData(
+    @Req() request: AuthenticatedRequest,
+    @Query('dateFrom') dateFrom?: string,
+  ) {
     const user = await this.getAuthenticatedUser(request);
 
     const [mainVehicle, upcomingEvents] = await Promise.all([
@@ -35,7 +39,11 @@ export class HomeController {
         }),
       ),
       firstValueFrom(
-        this.eventsService.send('findUpcomingEvents', { limit: 5 }),
+        this.eventsService.send('findUpcomingEvents', {
+          limit: 5,
+          authUserId: user.id,
+          ...(dateFrom && { dateFrom }),
+        }),
       ),
     ]);
 
