@@ -11,7 +11,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { CreateUserDto, UpdateUserDto } from '@rideglory/contracts';
+import {
+  CreateUserDto,
+  MedicalConsentDto,
+  UpdateUserDto,
+} from '@rideglory/contracts';
 import { Public } from 'auth/decorators/public.decorator';
 import { USERS_SERVICE } from 'config';
 import { Request } from 'express';
@@ -42,6 +46,22 @@ export class UsersController {
     }
 
     return this.usersService.send('findUserByEmail', { email });
+  }
+
+  @Post('me/medical-consent')
+  acceptMedicalConsent(
+    @Req() request: AuthenticatedRequest,
+    @Body() medicalConsentDto: MedicalConsentDto,
+  ) {
+    const email = request.user?.email;
+    if (!email) {
+      throw new UnauthorizedException('Authenticated user email is required');
+    }
+
+    return this.usersService.send('acceptMedicalConsent', {
+      email,
+      consentVersion: medicalConsentDto.consentVersion,
+    });
   }
 
   @Get(':id')
