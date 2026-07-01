@@ -2,8 +2,18 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, timeout } from 'rxjs';
-import { NotificationsService, NotificationType } from '../notifications/notifications.service';
-import { VEHICLES_SERVICE, USERS_SERVICE, EVENTS_SERVICE, MAINTENANCES_SERVICE } from '../config/services';
+import {
+  NotificationsService,
+  NotificationType,
+} from '../notifications/notifications.service';
+import {
+  VEHICLES_SERVICE,
+  USERS_SERVICE,
+  EVENTS_SERVICE,
+  MAINTENANCES_SERVICE,
+} from '../config/services';
+import { TrackingNotificationsService } from '../tracking/tracking-notifications.service';
+import { TrackingBroadcaster } from '../tracking/tracking-broadcaster.service';
 
 interface SoatRecord {
   id: string;
@@ -52,6 +62,8 @@ const RPC_TIMEOUT_MS = 5_000;
 export class NotificationSchedulerService {
   private readonly logger = new Logger('NotificationSchedulerService');
 
+  private _autoEndRunning = false;
+
   constructor(
     private readonly notificationsService: NotificationsService,
     @Inject(VEHICLES_SERVICE)
@@ -62,6 +74,8 @@ export class NotificationSchedulerService {
     private readonly eventsService: ClientProxy,
     @Inject(MAINTENANCES_SERVICE)
     private readonly maintenancesService: ClientProxy,
+    private readonly trackingNotificationsService: TrackingNotificationsService,
+    private readonly trackingBroadcaster: TrackingBroadcaster,
   ) {}
 
   // ── SOAT reminders ────────────────────────────────────────────────────────────
@@ -89,19 +103,31 @@ export class NotificationSchedulerService {
   /** Daily at 09:00 Bogota — RTM expiring in 30 days */
   @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
   async tecnomecanicaReminder30Days() {
-    await this.sendDocumentExpiryReminders('tecnomecanica', 30, 'TECNOMECANICA_30D');
+    await this.sendDocumentExpiryReminders(
+      'tecnomecanica',
+      30,
+      'TECNOMECANICA_30D',
+    );
   }
 
   /** Daily at 09:00 Bogota — RTM expiring in 7 days */
   @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
   async tecnomecanicaReminder7Days() {
-    await this.sendDocumentExpiryReminders('tecnomecanica', 7, 'TECNOMECANICA_7D');
+    await this.sendDocumentExpiryReminders(
+      'tecnomecanica',
+      7,
+      'TECNOMECANICA_7D',
+    );
   }
 
   /** Daily at 09:00 Bogota — RTM expiring today */
   @Cron('0 9 * * *', { timeZone: 'America/Bogota' })
   async tecnomecanicaReminderDayOf() {
-    await this.sendDocumentExpiryReminders('tecnomecanica', 0, 'TECNOMECANICA_DAY_OF');
+    await this.sendDocumentExpiryReminders(
+      'tecnomecanica',
+      0,
+      'TECNOMECANICA_DAY_OF',
+    );
   }
 
   // ── Maintenance date reminders ────────────────────────────────────────────────
@@ -123,11 +149,15 @@ export class NotificationSchedulerService {
           .pipe(timeout(RPC_TIMEOUT_MS)),
       );
     } catch (err: unknown) {
-      this.logger.error(`MAINTENANCE_DATE_REMINDER: failed to fetch records: ${String(err)}`);
+      this.logger.error(
+        `MAINTENANCE_DATE_REMINDER: failed to fetch records: ${String(err)}`,
+      );
       return;
     }
 
-    this.logger.log(`MAINTENANCE_DATE_REMINDER: found ${records.length} record(s)`);
+    this.logger.log(
+      `MAINTENANCE_DATE_REMINDER: found ${records.length} record(s)`,
+    );
 
     for (const record of records) {
       try {
@@ -140,7 +170,12 @@ export class NotificationSchedulerService {
         await this.notificationsService.createNotification(
           user.id,
           'MAINTENANCE_DATE_REMINDER',
-          { vehicleId: record.vehicleId, maintenanceId: record.id, maintenanceName: record.name, route: 'rideglory://maintenances' },
+          {
+            vehicleId: record.vehicleId,
+            maintenanceId: record.id,
+            maintenanceName: record.name,
+            route: 'rideglory://maintenances',
+          },
         );
 
         if (user.fcmToken) {
@@ -164,7 +199,9 @@ export class NotificationSchedulerService {
             .pipe(timeout(RPC_TIMEOUT_MS)),
         );
       } catch (err: unknown) {
-        this.logger.error(`MAINTENANCE_DATE_REMINDER: failed for record ${record.id}: ${String(err)}`);
+        this.logger.error(
+          `MAINTENANCE_DATE_REMINDER: failed for record ${record.id}: ${String(err)}`,
+        );
       }
     }
   }
@@ -193,7 +230,9 @@ export class NotificationSchedulerService {
           .pipe(timeout(RPC_TIMEOUT_MS)),
       );
     } catch (err: unknown) {
-      this.logger.error(`EVENT_REMINDER: failed to fetch events: ${String(err)}`);
+      this.logger.error(
+        `EVENT_REMINDER: failed to fetch events: ${String(err)}`,
+      );
       return;
     }
 
@@ -221,18 +260,27 @@ export class NotificationSchedulerService {
                 .pipe(timeout(RPC_TIMEOUT_MS)),
             );
 
-            await this.notificationsService.createNotification(userId, 'EVENT_REMINDER', {
-              eventId: event.id,
-              eventName: event.name,
-              route: `rideglory://events/detail-by-id?id=${event.id}`,
-            });
+            await this.notificationsService.createNotification(
+              userId,
+              'EVENT_REMINDER',
+              {
+                eventId: event.id,
+                eventName: event.name,
+                route: `rideglory://events/detail-by-id?id=${event.id}`,
+              },
+            );
 
             if (user.fcmToken) {
               await this.notificationsService.sendFcm(
                 user.fcmToken,
                 'Recordatorio de rodada',
                 `La rodada "${event.name}" comienza en 24 horas`,
-                { type: 'EVENT_REMINDER', eventId: event.id, eventName: event.name, route: `rideglory://events/detail-by-id?id=${event.id}` },
+                {
+                  type: 'EVENT_REMINDER',
+                  eventId: event.id,
+                  eventName: event.name,
+                  route: `rideglory://events/detail-by-id?id=${event.id}`,
+                },
               );
             }
           } catch {
@@ -247,8 +295,66 @@ export class NotificationSchedulerService {
             .pipe(timeout(RPC_TIMEOUT_MS)),
         );
       } catch (err: unknown) {
-        this.logger.error(`EVENT_REMINDER: failed for event ${event.id}: ${String(err)}`);
+        this.logger.error(
+          `EVENT_REMINDER: failed for event ${event.id}: ${String(err)}`,
+        );
       }
+    }
+  }
+
+  // ── Auto-end stalled events ───────────────────────────────────────────────────
+
+  /** Every hour on the hour — auto-end events stalled in IN_PROGRESS for 24+ hours */
+  @Cron('0 * * * *', { timeZone: 'America/Bogota' })
+  async autoEndStalledEvents(): Promise<void> {
+    if (this._autoEndRunning) {
+      this.logger.warn('AUTO_END: previous run still in progress — skipping');
+      return;
+    }
+    this._autoEndRunning = true;
+    try {
+      const cutoffDate = new Date(Date.now() - 24 * 60 * 60_000);
+      let events: Array<{ id: string }>;
+      try {
+        events = await firstValueFrom<Array<{ id: string }>>(
+          this.eventsService
+            .send('findActiveEventsOlderThan', {
+              cutoffDate: cutoffDate.toISOString(),
+            })
+            .pipe(timeout(10_000)),
+        );
+      } catch (err: unknown) {
+        this.logger.error(
+          `AUTO_END: failed to fetch stalled events: ${String(err)}`,
+        );
+        return;
+      }
+
+      if (events.length === 0) {
+        return;
+      }
+      this.logger.log(`AUTO_END: found ${events.length} stalled event(s)`);
+
+      for (const event of events) {
+        try {
+          await firstValueFrom(
+            this.eventsService
+              .send('forceEndTracking', { eventId: event.id })
+              .pipe(timeout(10_000)),
+          );
+          this.trackingBroadcaster.broadcastEventEnded(event.id);
+          void this.trackingNotificationsService
+            .sendEventEndedNotifications(event.id)
+            .catch(() => undefined);
+          this.logger.log(`AUTO_END: closed event ${event.id}`);
+        } catch (err: unknown) {
+          this.logger.error(
+            `AUTO_END: failed for event ${event.id}: ${String(err)}`,
+          );
+        }
+      }
+    } finally {
+      this._autoEndRunning = false;
     }
   }
 
@@ -279,30 +385,39 @@ export class NotificationSchedulerService {
 
     this.logger.log(`${type}: found ${records.length} record(s) expiring`);
 
-    const messages: Record<string, { title: string; body: (vehicleName: string) => string }> = {
+    const messages: Record<
+      string,
+      { title: string; body: (vehicleName: string) => string }
+    > = {
       SOAT_30D: {
         title: 'Tu SOAT vence en 30 días',
-        body: (vehicleName) => `El SOAT de tu moto ${vehicleName} vence en 30 días. ¡Renuévalo a tiempo!`,
+        body: (vehicleName) =>
+          `El SOAT de tu moto ${vehicleName} vence en 30 días. ¡Renuévalo a tiempo!`,
       },
       SOAT_7D: {
         title: 'Tu SOAT vence en 7 días',
-        body: (vehicleName) => `El SOAT de tu moto ${vehicleName} vence en 7 días. ¡No lo dejes para último momento!`,
+        body: (vehicleName) =>
+          `El SOAT de tu moto ${vehicleName} vence en 7 días. ¡No lo dejes para último momento!`,
       },
       SOAT_DAY_OF: {
         title: 'Tu SOAT vence hoy',
-        body: (vehicleName) => `El SOAT de tu moto ${vehicleName} vence hoy. Renuévalo cuanto antes.`,
+        body: (vehicleName) =>
+          `El SOAT de tu moto ${vehicleName} vence hoy. Renuévalo cuanto antes.`,
       },
       TECNOMECANICA_30D: {
         title: 'Tu RTM vence en 30 días',
-        body: (vehicleName) => `La revisión técnico-mecánica de tu moto ${vehicleName} vence en 30 días. ¡Sácala a tiempo!`,
+        body: (vehicleName) =>
+          `La revisión técnico-mecánica de tu moto ${vehicleName} vence en 30 días. ¡Sácala a tiempo!`,
       },
       TECNOMECANICA_7D: {
         title: 'Tu RTM vence en 7 días',
-        body: (vehicleName) => `La revisión técnico-mecánica de tu moto ${vehicleName} vence en 7 días. No esperes más.`,
+        body: (vehicleName) =>
+          `La revisión técnico-mecánica de tu moto ${vehicleName} vence en 7 días. No esperes más.`,
       },
       TECNOMECANICA_DAY_OF: {
         title: 'Tu RTM vence hoy',
-        body: (vehicleName) => `La revisión técnico-mecánica de tu moto ${vehicleName} vence hoy. Preséntala cuanto antes.`,
+        body: (vehicleName) =>
+          `La revisión técnico-mecánica de tu moto ${vehicleName} vence hoy. Preséntala cuanto antes.`,
       },
     };
 
@@ -327,11 +442,11 @@ export class NotificationSchedulerService {
             .pipe(timeout(RPC_TIMEOUT_MS)),
         );
 
-        await this.notificationsService.createNotification(
-          user.id,
-          type,
-          { vehicleId: vehicle.id, vehicleName: vehicle.name, route: 'rideglory://garage' },
-        );
+        await this.notificationsService.createNotification(user.id, type, {
+          vehicleId: vehicle.id,
+          vehicleName: vehicle.name,
+          route: 'rideglory://garage',
+        });
 
         if (user.fcmToken) {
           const msg = messages[type];
@@ -340,7 +455,12 @@ export class NotificationSchedulerService {
               user.fcmToken,
               msg.title,
               msg.body(vehicle.name),
-              { type, vehicleId: vehicle.id, vehicleName: vehicle.name, route: 'rideglory://garage' },
+              {
+                type,
+                vehicleId: vehicle.id,
+                vehicleName: vehicle.name,
+                route: 'rideglory://garage',
+              },
             );
           }
         }

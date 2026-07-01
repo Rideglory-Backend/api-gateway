@@ -175,7 +175,7 @@ describe('NotificationSchedulerService — RTM crons', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_WITH_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
         expect(vehiclesService.send).toHaveBeenCalledWith(
           'findTecnomecanicasExpiringIn',
@@ -190,7 +190,7 @@ describe('NotificationSchedulerService — RTM crons', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_WITH_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
         expect(notificationsService.createNotification).toHaveBeenCalledWith(
           USER_WITH_FCM.id,
@@ -210,7 +210,7 @@ describe('NotificationSchedulerService — RTM crons', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_WITH_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
         expect(notificationsService.sendFcm).toHaveBeenCalledWith(
           USER_WITH_FCM.fcmToken,
@@ -227,7 +227,7 @@ describe('NotificationSchedulerService — RTM crons', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_NO_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
         expect(notificationsService.createNotification).toHaveBeenCalled();
         expect(notificationsService.sendFcm).not.toHaveBeenCalled();
@@ -304,7 +304,7 @@ describe('NotificationSchedulerService — SOAT regression', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_WITH_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
         expect(vehiclesService.send).toHaveBeenCalledWith(
           'findSoatsExpiringIn',
@@ -319,7 +319,7 @@ describe('NotificationSchedulerService — SOAT regression', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_WITH_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
         expect(notificationsService.createNotification).toHaveBeenCalledWith(
           USER_WITH_FCM.id,
@@ -339,7 +339,7 @@ describe('NotificationSchedulerService — SOAT regression', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_WITH_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
         expect(notificationsService.sendFcm).toHaveBeenCalledWith(
           USER_WITH_FCM.fcmToken,
@@ -356,11 +356,10 @@ describe('NotificationSchedulerService — SOAT regression', () => {
 
         setFirstValueFromSequence([record], VEHICLE, USER_WITH_FCM);
 
-        await (service[method] as () => Promise<void>)();
+        await service[method]();
 
-        const sendFcmCall = (
-          notificationsService.sendFcm as jest.Mock
-        ).mock.calls[0];
+        const sendFcmCall = (notificationsService.sendFcm as jest.Mock).mock
+          .calls[0];
         const body: string = sendFcmCall[2];
         expect(body).not.toContain('técnico-mecánica');
         expect(body).not.toContain('RTM');

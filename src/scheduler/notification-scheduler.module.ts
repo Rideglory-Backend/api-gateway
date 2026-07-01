@@ -1,8 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { envs } from '../config/envs';
-import { VEHICLES_SERVICE, USERS_SERVICE, EVENTS_SERVICE, MAINTENANCES_SERVICE } from '../config/services';
+import {
+  VEHICLES_SERVICE,
+  USERS_SERVICE,
+  EVENTS_SERVICE,
+  MAINTENANCES_SERVICE,
+} from '../config/services';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { TrackingModule } from '../tracking/tracking.module';
 import { NotificationSchedulerService } from './notification-scheduler.service';
 import { ClsService } from 'nestjs-cls';
 import { TracingSerializer } from '@rideglory/common-lib';
@@ -10,6 +16,7 @@ import { TracingSerializer } from '@rideglory/common-lib';
 @Module({
   imports: [
     NotificationsModule,
+    TrackingModule,
     ClientsModule.registerAsync([
       {
         name: VEHICLES_SERVICE,

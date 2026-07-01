@@ -19,7 +19,7 @@ import {
 } from '@rideglory/contracts';
 import { EVENTS_SERVICE, USERS_SERVICE } from '../config/services';
 import { TrackingBroadcaster } from './tracking-broadcaster.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { TrackingNotificationsService } from './tracking-notifications.service';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -42,7 +42,7 @@ export class TrackingHttpController {
     @Inject(EVENTS_SERVICE) private readonly eventsService: ClientProxy,
     @Inject(USERS_SERVICE) private readonly usersService: ClientProxy,
     private readonly trackingBroadcaster: TrackingBroadcaster,
-    private readonly notificationsService: NotificationsService,
+    private readonly trackingNotificationsService: TrackingNotificationsService,
   ) {}
 
   /** POST /api/events/:eventId/tracking/start — organizer only */
@@ -87,7 +87,9 @@ export class TrackingHttpController {
     this.trackingBroadcaster.broadcastEventEnded(eventId);
 
     // FCM multicast to approved registrants
-    void this.sendEventEndedNotifications(eventId).catch(() => undefined);
+    void this.trackingNotificationsService
+      .sendEventEndedNotifications(eventId)
+      .catch(() => undefined);
 
     return result;
   }
@@ -191,36 +193,5 @@ export class TrackingHttpController {
       return {};
     }
     return geoJson;
-  }
-
-  // ── Private helpers ──────────────────────────────────────────────────────────
-
-  private async sendEventEndedNotifications(eventId: string): Promise<void> {
-    const userIds = await firstValueFrom<string[]>(
-      this.eventsService
-        .send('getApprovedRegistrantUserIds', { eventId })
-        .pipe(timeout(RPC_TIMEOUT_MS)),
-    );
-
-    for (const userId of userIds) {
-      try {
-        const user = await firstValueFrom<UserResult>(
-          this.usersService
-            .send('findOneUser', { id: userId })
-            .pipe(timeout(5_000)),
-        );
-
-        if (user.fcmToken) {
-          await this.notificationsService.sendFcm(
-            user.fcmToken,
-            'La rodada ha terminado',
-            'El organizador ha finalizado la rodada',
-            { type: 'TRACKING_ENDED', eventId, route: `rideglory://events/detail-by-id?id=${eventId}` },
-          );
-        }
-      } catch {
-        // Non-fatal — continue with other users
-      }
-    }
   }
 }

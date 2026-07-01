@@ -7,6 +7,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { TrackingBroadcaster } from './tracking-broadcaster.service';
 import { TrackingGateway } from './tracking.gateway';
 import { TrackingHttpController } from './tracking-http.controller';
+import { TrackingNotificationsService } from './tracking-notifications.service';
 import { TrackingRoomsService } from './tracking-rooms.service';
 import { ClsService } from 'nestjs-cls';
 import { TracingSerializer } from '@rideglory/common-lib';
@@ -48,6 +49,12 @@ import { TracingSerializer } from '@rideglory/common-lib';
     ]),
   ],
   controllers: [TrackingHttpController],
-  providers: [TrackingRoomsService, TrackingBroadcaster, TrackingGateway],
+  providers: [
+    TrackingRoomsService,
+    TrackingBroadcaster,
+    TrackingGateway,
+    TrackingNotificationsService,
+  ],
+  exports: [TrackingNotificationsService, TrackingBroadcaster],
 })
 export class TrackingModule {}
