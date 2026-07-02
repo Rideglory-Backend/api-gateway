@@ -45,16 +45,33 @@ export class TrackingHttpController {
     private readonly trackingNotificationsService: TrackingNotificationsService,
   ) {}
 
+  /**
+   * Resuelve el id de usuario de la BD a partir del email autenticado. El owner
+   * de un evento se guarda con este id (no con el Firebase uid), así que las
+   * validaciones de organizador deben compararse contra él.
+   */
+  private async resolveDbUserId(
+    request: AuthenticatedRequest,
+  ): Promise<string> {
+    const email = request.user?.email;
+    if (!email) {
+      throw new UnauthorizedException();
+    }
+    const dbUser = await firstValueFrom<UserResult>(
+      this.usersService
+        .send('findUserByEmail', { email })
+        .pipe(timeout(RPC_TIMEOUT_MS)),
+    );
+    return dbUser.id;
+  }
+
   /** POST /api/events/:eventId/tracking/start — organizer only */
   @Post(':eventId/tracking/start')
   async startTracking(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Req() request: AuthenticatedRequest,
   ) {
-    const authUserId = request.user?.uid;
-    if (!authUserId) {
-      throw new UnauthorizedException();
-    }
+    const authUserId = await this.resolveDbUserId(request);
 
     const result = await firstValueFrom<{ id: string; state: string }>(
       this.eventsService
@@ -73,10 +90,7 @@ export class TrackingHttpController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Req() request: AuthenticatedRequest,
   ) {
-    const authUserId = request.user?.uid;
-    if (!authUserId) {
-      throw new UnauthorizedException();
-    }
+    const authUserId = await this.resolveDbUserId(request);
 
     const result = await firstValueFrom<{ id: string; state: string }>(
       this.eventsService
@@ -100,19 +114,7 @@ export class TrackingHttpController {
     @Body() body: StartTrackingSessionBodyDto,
     @Req() request: AuthenticatedRequest,
   ) {
-    if (!request.user?.uid) {
-      throw new UnauthorizedException();
-    }
-    const email = request.user?.email;
-    if (!email) {
-      throw new UnauthorizedException();
-    }
-    const dbUser = await firstValueFrom<UserResult>(
-      this.usersService
-        .send('findUserByEmail', { email })
-        .pipe(timeout(RPC_TIMEOUT_MS)),
-    );
-    const authUserId = dbUser.id;
+    const authUserId = await this.resolveDbUserId(request);
     const result = await firstValueFrom(
       this.eventsService
         .send('trackingStartSession', {
@@ -134,19 +136,7 @@ export class TrackingHttpController {
     @Body() body: StopTrackingSessionBodyDto,
     @Req() request: AuthenticatedRequest,
   ) {
-    if (!request.user?.uid) {
-      throw new UnauthorizedException();
-    }
-    const email = request.user?.email;
-    if (!email) {
-      throw new UnauthorizedException();
-    }
-    const dbUser = await firstValueFrom<UserResult>(
-      this.usersService
-        .send('findUserByEmail', { email })
-        .pipe(timeout(RPC_TIMEOUT_MS)),
-    );
-    const authUserId = dbUser.id;
+    const authUserId = await this.resolveDbUserId(request);
     const result = await firstValueFrom(
       this.eventsService
         .send('trackingStopSession', {

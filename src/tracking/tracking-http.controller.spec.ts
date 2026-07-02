@@ -5,9 +5,13 @@
  *   (a) returns the trackingEnd result from events-ms
  *   (b) calls trackingBroadcaster.broadcastEventEnded(eventId)
  *   (c) delegates FCM to trackingNotificationsService.sendEventEndedNotifications(eventId)
+ * Owner resolution:
+ *   - the event owner is stored with the DB user id, so the controller must
+ *     resolve email → dbUser.id (via findUserByEmail) and pass THAT as
+ *     authUserId, not the raw Firebase uid.
  * Auth guard:
- *   - uid present → proceeds with authUserId = uid (consistent with startTracking)
- *   - missing uid → UnauthorizedException thrown immediately
+ *   - email present → proceeds
+ *   - missing email → UnauthorizedException thrown immediately
  */
 
 // ── Mock rxjs firstValueFrom before imports ───────────────────────────────────
@@ -58,10 +62,11 @@ function makeTrackingNotificationsService(): MockNotificationsSvc {
   };
 }
 
-function makeRequest(overrides?: Partial<{ uid: string }>) {
+function makeRequest(overrides?: Partial<{ uid: string; email: string }>) {
   return {
     user: {
       uid: overrides?.uid ?? 'firebase-uid-1',
+      email: 'email' in (overrides ?? {}) ? overrides?.email : 'organizer@test.com',
     },
   } as unknown as Request;
 }
@@ -98,38 +103,40 @@ beforeEach(() => {
 
 describe('TrackingHttpController.endTracking — happy path', () => {
   const eventId = 'event-uuid-001';
-  const uid = 'firebase-uid-organizer';
+  const dbUserId = 'db-user-organizer';
   const endResult = { id: eventId, state: 'FINISHED' };
+
+  // firstValueFrom is called twice per request: (1) findUserByEmail → dbUser,
+  // (2) trackingEnd → endResult.
+  function primeRpcs() {
+    mockFirstValueFrom
+      .mockResolvedValueOnce({ id: dbUserId })
+      .mockResolvedValueOnce(endResult);
+  }
 
   it('(a) returns the result from the events-ms trackingEnd RPC', async () => {
     const { controller } = buildController();
-    const request = makeRequest({ uid });
+    primeRpcs();
 
-    mockFirstValueFrom.mockResolvedValueOnce(endResult);
-
-    const result = await controller.endTracking(eventId, request);
+    const result = await controller.endTracking(eventId, makeRequest());
 
     expect(result).toEqual(endResult);
   });
 
   it('(b) calls trackingBroadcaster.broadcastEventEnded with eventId', async () => {
     const { controller, broadcaster } = buildController();
-    const request = makeRequest({ uid });
+    primeRpcs();
 
-    mockFirstValueFrom.mockResolvedValueOnce(endResult);
-
-    await controller.endTracking(eventId, request);
+    await controller.endTracking(eventId, makeRequest());
 
     expect(broadcaster.broadcastEventEnded).toHaveBeenCalledWith(eventId);
   });
 
   it('(c) delegates FCM to trackingNotificationsService.sendEventEndedNotifications', async () => {
     const { controller, notificationsSvc } = buildController();
-    const request = makeRequest({ uid });
+    primeRpcs();
 
-    mockFirstValueFrom.mockResolvedValueOnce(endResult);
-
-    await controller.endTracking(eventId, request);
+    await controller.endTracking(eventId, makeRequest());
 
     await Promise.resolve();
 
@@ -138,19 +145,22 @@ describe('TrackingHttpController.endTracking — happy path', () => {
     );
   });
 
-  it('passes uid directly as authUserId to events-ms (no extra RPC)', async () => {
+  it('resolves the DB user id from email and passes it as authUserId', async () => {
     const { controller, eventsService, usersService } = buildController();
-    const request = makeRequest({ uid });
+    primeRpcs();
 
-    mockFirstValueFrom.mockResolvedValueOnce(endResult);
+    await controller.endTracking(
+      eventId,
+      makeRequest({ email: 'organizer@test.com' }),
+    );
 
-    await controller.endTracking(eventId, request);
-
+    expect(usersService.send).toHaveBeenCalledWith('findUserByEmail', {
+      email: 'organizer@test.com',
+    });
     expect(eventsService.send).toHaveBeenCalledWith('trackingEnd', {
       eventId,
-      authUserId: uid,
+      authUserId: dbUserId,
     });
-    expect(usersService.send).not.toHaveBeenCalled();
   });
 });
 
@@ -159,9 +169,9 @@ describe('TrackingHttpController.endTracking — happy path', () => {
 describe('TrackingHttpController.endTracking — auth guard', () => {
   const eventId = 'event-uuid-002';
 
-  it('throws UnauthorizedException when uid is missing from request.user', async () => {
+  it('throws UnauthorizedException when email is missing from request.user', async () => {
     const { controller } = buildController();
-    const request = { user: { uid: undefined } } as unknown as Request;
+    const request = makeRequest({ email: undefined });
 
     await expect(controller.endTracking(eventId, request)).rejects.toThrow(
       UnauthorizedException,
