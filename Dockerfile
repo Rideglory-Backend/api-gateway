@@ -39,6 +39,7 @@ RUN pnpm install --prod --frozen-lockfile --ignore-scripts && pnpm store prune
 
 COPY --from=builder /build/api-gateway/dist ./dist
 COPY api-gateway/prisma ./prisma
+COPY api-gateway/prisma.config.ts ./prisma.config.ts
 RUN pnpm exec prisma generate && pnpm store prune
 COPY api-gateway/healthcheck.js ./healthcheck.js
 
@@ -49,4 +50,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node healthcheck.js
 
-CMD ["node", "dist/src/main"]
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/src/main"]
