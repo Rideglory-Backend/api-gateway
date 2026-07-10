@@ -1,7 +1,13 @@
 import { Module } from '@nestjs/common';
 import { UsersController } from './users.controller';
 import { AccountDeletionService } from './account-deletion.service';
-import { envs, MAINTENANCES_SERVICE, USERS_SERVICE, VEHICLES_SERVICE } from '../config';
+import {
+  envs,
+  EVENTS_SERVICE,
+  MAINTENANCES_SERVICE,
+  USERS_SERVICE,
+  VEHICLES_SERVICE,
+} from '../config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ClsService } from 'nestjs-cls';
 import { TracingSerializer } from '@rideglory/common-lib';
@@ -47,6 +53,18 @@ import { AiModule } from '../ai/ai.module';
           options: {
             port: envs.maintenancesMsPort,
             host: envs.maintenancesMsHost,
+            serializer: new TracingSerializer(cls),
+          },
+        }),
+      },
+      {
+        name: EVENTS_SERVICE,
+        inject: [ClsService],
+        useFactory: (cls: ClsService) => ({
+          transport: Transport.TCP,
+          options: {
+            port: envs.eventsMsPort,
+            host: envs.eventsMsHost,
             serializer: new TracingSerializer(cls),
           },
         }),

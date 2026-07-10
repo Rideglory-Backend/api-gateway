@@ -44,6 +44,7 @@ export class RpcCustomExceptionFilter implements ExceptionFilter {
     return response.status(normalized.status).json({
       statusCode: normalized.status,
       message: normalized.message,
+      ...normalized.extra,
       ...(traceId ? { traceId } : {}),
     });
   }
@@ -51,6 +52,7 @@ export class RpcCustomExceptionFilter implements ExceptionFilter {
   private normalizeError(exception: unknown): {
     status: number;
     message: unknown;
+    extra?: Record<string, unknown>;
   } {
     if (exception instanceof RpcException) {
       const rpcError = exception.getError();
@@ -61,9 +63,19 @@ export class RpcCustomExceptionFilter implements ExceptionFilter {
         'status' in rpcError &&
         'message' in rpcError
       ) {
+        // Cualquier propiedad adicional del error (p. ej. `error`,
+        // `activeEvents`) se preserva en el body de la respuesta HTTP —
+        // no solo `statusCode`/`message`. Ver ACTIVE_EVENTS_AS_ORGANIZER.
+        const { status, message, ...extra } = rpcError as {
+          status: number;
+          message: unknown;
+          [key: string]: unknown;
+        };
+
         return {
-          status: Number((rpcError as { status: number }).status),
-          message: (rpcError as { message: unknown }).message,
+          status: Number(status),
+          message,
+          extra: Object.keys(extra).length > 0 ? extra : undefined,
         };
       }
 

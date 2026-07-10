@@ -5,6 +5,7 @@ import { AccountDeletionService } from './account-deletion.service';
 const mockUsersService = { send: jest.fn() };
 const mockVehiclesService = { send: jest.fn() };
 const mockMaintenancesService = { send: jest.fn() };
+const mockEventsService = { send: jest.fn() };
 const mockStorageCleanupService = { deleteFilesByUrls: jest.fn() };
 const mockFirebaseAuthService = { deleteUser: jest.fn() };
 
@@ -17,6 +18,7 @@ describe('AccountDeletionService.deleteAccount', () => {
       mockUsersService as any,
       mockVehiclesService as any,
       mockMaintenancesService as any,
+      mockEventsService as any,
       mockStorageCleanupService as any,
       mockFirebaseAuthService as any,
     );
@@ -38,11 +40,16 @@ describe('AccountDeletionService.deleteAccount', () => {
       if (pattern === 'softDeleteMaintenancesByUserId') return of({ count: 3 });
       throw new Error(`Unexpected maintenances-ms pattern: ${pattern}`);
     });
+    mockEventsService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'findEventsByOwnerId') return of([]);
+      if (pattern === 'anonymizeRegistrationsByUserId') return of({ count: 4 });
+      throw new Error(`Unexpected events-ms pattern: ${pattern}`);
+    });
     mockStorageCleanupService.deleteFilesByUrls.mockResolvedValue(undefined);
     mockFirebaseAuthService.deleteUser.mockResolvedValue(undefined);
   }
 
-  it('calls the 6 steps in order: findUserByEmail → hardDeleteAllByOwner → deleteFilesByUrls → softDeleteMaintenancesByUserId → hardDeleteUser → firebaseDeleteUser', async () => {
+  it('calls the 8 steps in order: findUserByEmail → findEventsByOwnerId → hardDeleteAllByOwner → deleteFilesByUrls → softDeleteMaintenancesByUserId → anonymizeRegistrationsByUserId → hardDeleteUser → firebaseDeleteUser', async () => {
     const callOrder: string[] = [];
 
     mockUsersService.send.mockImplementation((pattern: string) => {
@@ -62,6 +69,11 @@ describe('AccountDeletionService.deleteAccount', () => {
       callOrder.push(pattern);
       return of({ count: 0 });
     });
+    mockEventsService.send.mockImplementation((pattern: string) => {
+      callOrder.push(pattern);
+      if (pattern === 'findEventsByOwnerId') return of([]);
+      return of({ count: 2 });
+    });
     mockFirebaseAuthService.deleteUser.mockImplementation(async () => {
       callOrder.push('firebaseDeleteUser');
     });
@@ -70,12 +82,17 @@ describe('AccountDeletionService.deleteAccount', () => {
 
     expect(callOrder).toEqual([
       'findUserByEmail',
+      'findEventsByOwnerId',
       'hardDeleteAllByOwner',
       'deleteFilesByUrls',
       'softDeleteMaintenancesByUserId',
+      'anonymizeRegistrationsByUserId',
       'hardDeleteUser',
       'firebaseDeleteUser',
     ]);
+    expect(mockEventsService.send).toHaveBeenCalledWith('findEventsByOwnerId', {
+      ownerId: 'user-1',
+    });
     expect(mockVehiclesService.send).toHaveBeenCalledWith('hardDeleteAllByOwner', {
       ownerId: 'user-1',
     });
@@ -83,6 +100,9 @@ describe('AccountDeletionService.deleteAccount', () => {
       'https://img/v1.jpg',
     ]);
     expect(mockMaintenancesService.send).toHaveBeenCalledWith('softDeleteMaintenancesByUserId', {
+      userId: 'user-1',
+    });
+    expect(mockEventsService.send).toHaveBeenCalledWith('anonymizeRegistrationsByUserId', {
       userId: 'user-1',
     });
     expect(mockUsersService.send).toHaveBeenCalledWith('hardDeleteUser', { id: 'user-1' });
@@ -99,13 +119,16 @@ describe('AccountDeletionService.deleteAccount', () => {
     expect(mockFirebaseAuthService.deleteUser).toHaveBeenCalledWith('uid-123');
   });
 
-  it('storage cleanup failure does NOT abort the flow — steps 4-6 still run', async () => {
+  it('storage cleanup failure does NOT abort the flow — later steps still run', async () => {
     mockHappyPath();
     mockStorageCleanupService.deleteFilesByUrls.mockRejectedValue(new Error('storage down'));
 
     await service.deleteAccount('uid-123', 'rider@example.com');
 
     expect(mockMaintenancesService.send).toHaveBeenCalledWith('softDeleteMaintenancesByUserId', {
+      userId: 'user-1',
+    });
+    expect(mockEventsService.send).toHaveBeenCalledWith('anonymizeRegistrationsByUserId', {
       userId: 'user-1',
     });
     expect(mockUsersService.send).toHaveBeenCalledWith('hardDeleteUser', { id: 'user-1' });
@@ -126,15 +149,20 @@ describe('AccountDeletionService.deleteAccount', () => {
     ).rejects.toThrow(notFound);
 
     expect(mockUsersService.send).toHaveBeenCalledTimes(1);
+    expect(mockEventsService.send).not.toHaveBeenCalled();
     expect(mockVehiclesService.send).not.toHaveBeenCalled();
     expect(mockMaintenancesService.send).not.toHaveBeenCalled();
     expect(mockStorageCleanupService.deleteFilesByUrls).not.toHaveBeenCalled();
     expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
   });
 
-  it('when hardDeleteAllByOwner (vehicles-ms) fails, it propagates and aborts before storage/maintenances/hardDeleteUser/Firebase', async () => {
+  it('when hardDeleteAllByOwner (vehicles-ms) fails, it propagates and aborts before storage/maintenances/events/hardDeleteUser/Firebase', async () => {
     mockUsersService.send.mockImplementation((pattern: string) => {
       if (pattern === 'findUserByEmail') return of({ id: 'user-1' });
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+    mockEventsService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'findEventsByOwnerId') return of([]);
       throw new Error(`Unexpected pattern: ${pattern}`);
     });
     mockVehiclesService.send.mockImplementation((pattern: string) => {
@@ -148,11 +176,15 @@ describe('AccountDeletionService.deleteAccount', () => {
 
     expect(mockStorageCleanupService.deleteFilesByUrls).not.toHaveBeenCalled();
     expect(mockMaintenancesService.send).not.toHaveBeenCalled();
+    expect(mockEventsService.send).not.toHaveBeenCalledWith(
+      'anonymizeRegistrationsByUserId',
+      expect.anything(),
+    );
     expect(mockUsersService.send).not.toHaveBeenCalledWith('hardDeleteUser', expect.anything());
     expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
   });
 
-  it('when softDeleteMaintenancesByUserId (maintenances-ms) fails, it propagates and aborts before hardDeleteUser/Firebase', async () => {
+  it('when softDeleteMaintenancesByUserId (maintenances-ms) fails, it propagates and aborts before anonymize/hardDeleteUser/Firebase', async () => {
     mockHappyPath();
     mockMaintenancesService.send.mockImplementation((pattern: string) => {
       if (pattern === 'softDeleteMaintenancesByUserId') {
@@ -165,11 +197,33 @@ describe('AccountDeletionService.deleteAccount', () => {
       service.deleteAccount('uid-123', 'rider@example.com'),
     ).rejects.toThrow();
 
+    expect(mockEventsService.send).not.toHaveBeenCalledWith(
+      'anonymizeRegistrationsByUserId',
+      expect.anything(),
+    );
     expect(mockUsersService.send).not.toHaveBeenCalledWith('hardDeleteUser', expect.anything());
     expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
   });
 
-  it('when step 5 (hardDeleteUser) throws, step 6 (Firebase deleteUser) is never invoked', async () => {
+  it('when anonymizeRegistrationsByUserId (events-ms) fails, it propagates and aborts before hardDeleteUser/Firebase', async () => {
+    mockHappyPath();
+    mockEventsService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'findEventsByOwnerId') return of([]);
+      if (pattern === 'anonymizeRegistrationsByUserId') {
+        return throwError(() => new Error('events-ms down'));
+      }
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+
+    await expect(
+      service.deleteAccount('uid-123', 'rider@example.com'),
+    ).rejects.toThrow();
+
+    expect(mockUsersService.send).not.toHaveBeenCalledWith('hardDeleteUser', expect.anything());
+    expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('when step 7 (hardDeleteUser) throws, step 8 (Firebase deleteUser) is never invoked', async () => {
     mockHappyPath();
     mockUsersService.send.mockImplementation((pattern: string) => {
       if (pattern === 'findUserByEmail') return of({ id: 'user-1' });
@@ -182,5 +236,71 @@ describe('AccountDeletionService.deleteAccount', () => {
     ).rejects.toThrow('hard delete failed');
 
     expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
+  });
+
+  describe('ACTIVE_EVENTS_AS_ORGANIZER precondition', () => {
+    it('throws 409 ACTIVE_EVENTS_AS_ORGANIZER with non-empty activeEvents when the user has a DRAFT/SCHEDULED/IN_PROGRESS event as owner, and no deletion step runs', async () => {
+      mockUsersService.send.mockImplementation((pattern: string) => {
+        if (pattern === 'findUserByEmail') return of({ id: 'user-1' });
+        throw new Error(`Unexpected pattern: ${pattern}`);
+      });
+      mockEventsService.send.mockImplementation((pattern: string) => {
+        if (pattern === 'findEventsByOwnerId') {
+          return of([
+            { id: 'evt-1', name: 'Rodada de verano', state: 'SCHEDULED' },
+            { id: 'evt-2', name: 'Evento pasado', state: 'FINISHED' },
+          ]);
+        }
+        throw new Error(`Unexpected pattern: ${pattern}`);
+      });
+
+      await expect(
+        service.deleteAccount('uid-123', 'organizer@example.com'),
+      ).rejects.toMatchObject({
+        error: {
+          status: 409,
+          error: 'ACTIVE_EVENTS_AS_ORGANIZER',
+          activeEvents: [{ id: 'evt-1', name: 'Rodada de verano', state: 'SCHEDULED' }],
+        },
+      });
+
+      expect(mockVehiclesService.send).not.toHaveBeenCalled();
+      expect(mockStorageCleanupService.deleteFilesByUrls).not.toHaveBeenCalled();
+      expect(mockMaintenancesService.send).not.toHaveBeenCalled();
+      expect(mockEventsService.send).not.toHaveBeenCalledWith(
+        'anonymizeRegistrationsByUserId',
+        expect.anything(),
+      );
+      expect(mockUsersService.send).not.toHaveBeenCalledWith('hardDeleteUser', expect.anything());
+      expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
+    });
+
+    it('does not block when the user only has CANCELLED/FINISHED events as owner', async () => {
+      mockHappyPath();
+      mockEventsService.send.mockImplementation((pattern: string) => {
+        if (pattern === 'findEventsByOwnerId') {
+          return of([
+            { id: 'evt-1', name: 'Evento cancelado', state: 'CANCELLED' },
+            { id: 'evt-2', name: 'Evento finalizado', state: 'FINISHED' },
+          ]);
+        }
+        if (pattern === 'anonymizeRegistrationsByUserId') return of({ count: 1 });
+        throw new Error(`Unexpected pattern: ${pattern}`);
+      });
+
+      await service.deleteAccount('uid-123', 'organizer@example.com');
+
+      expect(mockUsersService.send).toHaveBeenCalledWith('hardDeleteUser', { id: 'user-1' });
+      expect(mockFirebaseAuthService.deleteUser).toHaveBeenCalledWith('uid-123');
+    });
+
+    it('does not block a rider with no owned events (findEventsByOwnerId returns [])', async () => {
+      mockHappyPath();
+
+      await service.deleteAccount('uid-123', 'rider@example.com');
+
+      expect(mockUsersService.send).toHaveBeenCalledWith('hardDeleteUser', { id: 'user-1' });
+      expect(mockFirebaseAuthService.deleteUser).toHaveBeenCalledWith('uid-123');
+    });
   });
 });
