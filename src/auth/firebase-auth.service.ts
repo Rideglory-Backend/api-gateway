@@ -19,6 +19,15 @@ export class FirebaseAuthService {
     }
   }
 
+  async deleteUser(uid: string): Promise<void> {
+    try {
+      await getAuth(this.firebaseApp).deleteUser(uid);
+    } catch (error) {
+      console.error('[FirebaseAuth] deleteUser failed:', error);
+      throw error;
+    }
+  }
+
   private initializeFirebaseApp(): App {
     const existingApps = getApps();
     if (existingApps.length > 0) {

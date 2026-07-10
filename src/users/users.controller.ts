@@ -1,8 +1,11 @@
 import {
   Controller,
+  Delete,
   Get,
   Post,
   Body,
+  HttpCode,
+  HttpStatus,
   Patch,
   Param,
   Inject,
@@ -12,12 +15,14 @@ import {
 } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { CreateUserDto, UpdateUserDto } from '@rideglory/contracts';
-import { Public } from 'auth/decorators/public.decorator';
-import { USERS_SERVICE } from 'config';
+import { Public } from '../auth/decorators/public.decorator';
+import { USERS_SERVICE } from '../config/services';
 import { Request } from 'express';
+import { AccountDeletionService } from './account-deletion.service';
 
 type AuthenticatedRequest = Request & {
   user?: {
+    uid?: string;
     email?: string;
   };
 };
@@ -26,6 +31,7 @@ type AuthenticatedRequest = Request & {
 export class UsersController {
   constructor(
     @Inject(USERS_SERVICE) private readonly usersService: ClientProxy,
+    private readonly accountDeletionService: AccountDeletionService,
   ) {}
 
   @Post('sign-up')
@@ -42,6 +48,18 @@ export class UsersController {
     }
 
     return this.usersService.send('findUserByEmail', { email });
+  }
+
+  @Delete('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMe(@Req() request: AuthenticatedRequest): Promise<void> {
+    const uid = request.user?.uid;
+    const email = request.user?.email;
+    if (!uid || !email) {
+      throw new UnauthorizedException('Authenticated user uid and email are required');
+    }
+
+    await this.accountDeletionService.deleteAccount(uid, email);
   }
 
   @Get(':id')
