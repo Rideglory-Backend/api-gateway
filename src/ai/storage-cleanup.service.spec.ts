@@ -15,8 +15,14 @@ function makeFile(timeCreated: string, name = 'pending/user/file.png') {
   };
 }
 
+function makeDeletableFile() {
+  return { delete: jest.fn().mockResolvedValue(undefined) };
+}
+
 const mockBucket = {
+  name: 'rideglory-test.appspot.com',
   getFiles: jest.fn(),
+  file: jest.fn(),
 };
 const mockGetStorage = jest.fn().mockReturnValue({ bucket: () => mockBucket });
 
@@ -92,5 +98,74 @@ describe('StorageCleanupService', () => {
     mockBucket.getFiles.mockResolvedValue([[]]);
 
     await expect(service.cleanPendingCovers()).resolves.toBeUndefined();
+  });
+
+  describe('deleteFilesByUrls', () => {
+    it('deletes the file at the path parsed from a Firebase SDK download URL', async () => {
+      const file = makeDeletableFile();
+      mockBucket.file.mockReturnValue(file);
+      const url =
+        'https://firebasestorage.googleapis.com/v0/b/rideglory-test.appspot.com/o/vehicles%2Fabc.jpg?alt=media&token=xyz';
+
+      await service.deleteFilesByUrls([url]);
+
+      expect(mockBucket.file).toHaveBeenCalledWith('vehicles/abc.jpg');
+      expect(file.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes the file at the path parsed from the public storage.googleapis.com URL format', async () => {
+      const file = makeDeletableFile();
+      mockBucket.file.mockReturnValue(file);
+      const url = 'https://storage.googleapis.com/rideglory-test.appspot.com/pending/user-1/draft.png';
+
+      await service.deleteFilesByUrls([url]);
+
+      expect(mockBucket.file).toHaveBeenCalledWith('pending/user-1/draft.png');
+      expect(file.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing on an empty list', async () => {
+      await service.deleteFilesByUrls([]);
+
+      expect(mockBucket.file).not.toHaveBeenCalled();
+    });
+
+    it('filters out null/undefined/empty entries before processing', async () => {
+      const file = makeDeletableFile();
+      mockBucket.file.mockReturnValue(file);
+      const url =
+        'https://firebasestorage.googleapis.com/v0/b/rideglory-test.appspot.com/o/vehicles%2Fabc.jpg?alt=media';
+
+      await service.deleteFilesByUrls([null, undefined, '', url]);
+
+      expect(mockBucket.file).toHaveBeenCalledTimes(1);
+      expect(file.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('continues the batch when one file fails to delete (object missing / corrupt)', async () => {
+      const failing = { delete: jest.fn().mockRejectedValue(new Error('object not found')) };
+      const succeeding = makeDeletableFile();
+      mockBucket.file
+        .mockReturnValueOnce(failing)
+        .mockReturnValueOnce(succeeding);
+
+      const urlA =
+        'https://firebasestorage.googleapis.com/v0/b/rideglory-test.appspot.com/o/vehicles%2Fmissing.jpg?alt=media';
+      const urlB =
+        'https://firebasestorage.googleapis.com/v0/b/rideglory-test.appspot.com/o/vehicles%2Fok.jpg?alt=media';
+
+      await expect(service.deleteFilesByUrls([urlA, urlB])).resolves.toBeUndefined();
+
+      expect(failing.delete).toHaveBeenCalledTimes(1);
+      expect(succeeding.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a URL whose storage path cannot be parsed without throwing', async () => {
+      await expect(
+        service.deleteFilesByUrls(['not-a-valid-storage-url']),
+      ).resolves.toBeUndefined();
+
+      expect(mockBucket.file).not.toHaveBeenCalled();
+    });
   });
 });
