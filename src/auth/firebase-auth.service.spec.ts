@@ -35,10 +35,22 @@ describe('FirebaseAuthService.deleteUser', () => {
     expect(mockDeleteUser).toHaveBeenCalledWith('uid-123');
   });
 
-  it('rethrows the original error when the Admin SDK call fails', async () => {
-    const sdkError = new Error('auth/user-not-found');
+  it('rethrows the original error when the Admin SDK call fails with an unrelated code', async () => {
+    const sdkError = Object.assign(new Error('Insufficient permission to access the project'), {
+      code: 'auth/insufficient-permission',
+    });
     mockDeleteUser.mockRejectedValue(sdkError);
 
     await expect(service.deleteUser('uid-missing')).rejects.toThrow(sdkError);
+  });
+
+  it('is an idempotent no-op when the Admin SDK reports auth/user-not-found', async () => {
+    const sdkError = Object.assign(new Error('There is no user record...'), {
+      code: 'auth/user-not-found',
+    });
+    mockDeleteUser.mockRejectedValue(sdkError);
+
+    await expect(service.deleteUser('uid-already-deleted')).resolves.toBeUndefined();
+    expect(mockDeleteUser).toHaveBeenCalledWith('uid-already-deleted');
   });
 });

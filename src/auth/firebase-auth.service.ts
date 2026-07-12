@@ -23,6 +23,13 @@ export class FirebaseAuthService {
     try {
       await getAuth(this.firebaseApp).deleteUser(uid);
     } catch (error) {
+      if ((error as { code?: string })?.code === 'auth/user-not-found') {
+        // El usuario de Firebase Auth ya fue borrado en una corrida previa
+        // (reintento tras éxito total, o carrera con otra petición en
+        // vuelo). No-op idempotente: no relanzar.
+        console.warn(`[FirebaseAuth] deleteUser: uid ${uid} already deleted, idempotent no-op`);
+        return;
+      }
       console.error('[FirebaseAuth] deleteUser failed:', error);
       throw error;
     }

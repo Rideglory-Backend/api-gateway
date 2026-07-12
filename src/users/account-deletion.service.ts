@@ -24,6 +24,24 @@ interface OwnedEvent {
   state: string;
 }
 
+/**
+ * Duck-typing guard para el error "no encontrado" tal como cruza el
+ * `ClientProxy` de NestJS microservices: llega como objeto plano
+ * `{status, message}` (no como instancia de `RpcException`), replicando el
+ * `{status: HttpStatus.NOT_FOUND, message}` que `users-ms` lanza en
+ * `findByEmail`. Ver los `catchError` de `vehicles.controller.ts` que ya
+ * acceden a `error?.status` con el mismo patrón.
+ */
+function isNotFoundRpcError(error: unknown): boolean {
+  const candidate = error instanceof RpcException ? error.getError() : error;
+  return (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    'status' in candidate &&
+    (candidate as { status?: unknown }).status === HttpStatus.NOT_FOUND
+  );
+}
+
 @Injectable()
 export class AccountDeletionService {
   private readonly logger = new Logger(AccountDeletionService.name);
@@ -56,9 +74,23 @@ export class AccountDeletionService {
    *    ejecutan.
    */
   async deleteAccount(uid: string, email: string): Promise<void> {
-    const user = await firstValueFrom(
-      this.usersService.send<{ id: string }>('findUserByEmail', { email }),
-    );
+    let user: { id: string };
+    try {
+      user = await firstValueFrom(
+        this.usersService.send<{ id: string }>('findUserByEmail', { email }),
+      );
+    } catch (error) {
+      if (isNotFoundRpcError(error)) {
+        // El usuario ya fue borrado por completo en una corrida previa
+        // (reintento tras éxito total, o carrera con otra petición en
+        // vuelo). Éxito idempotente: no hay nada más que hacer.
+        this.logger.log(
+          `deleteAccount: user for email already deleted, treating as idempotent success`,
+        );
+        return;
+      }
+      throw error;
+    }
 
     await this.ensureNoActiveEventsAsOrganizer(user.id);
 

@@ -135,7 +135,49 @@ describe('AccountDeletionService.deleteAccount', () => {
     expect(mockFirebaseAuthService.deleteUser).toHaveBeenCalledWith('uid-123');
   });
 
-  it('propagates the 404 from findUserByEmail and never calls any other step', async () => {
+  it('propagates a non-404 error from findUserByEmail and never calls any other step', async () => {
+    const badGateway = { status: 502, message: 'users-ms unreachable' };
+    mockUsersService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'findUserByEmail') {
+        return throwError(() => badGateway);
+      }
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+
+    await expect(
+      service.deleteAccount('uid-123', 'missing@example.com'),
+    ).rejects.toBe(badGateway);
+
+    expect(mockUsersService.send).toHaveBeenCalledTimes(1);
+    expect(mockEventsService.send).not.toHaveBeenCalled();
+    expect(mockVehiclesService.send).not.toHaveBeenCalled();
+    expect(mockMaintenancesService.send).not.toHaveBeenCalled();
+    expect(mockStorageCleanupService.deleteFilesByUrls).not.toHaveBeenCalled();
+    expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('retry-after-full-completion: findUserByEmail 404 (plain {status, message} object, as it crosses the ClientProxy) resolves as idempotent success and never calls any other step', async () => {
+    const notFound = { status: 404, message: 'User with email missing@example.com not found' };
+    mockUsersService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'findUserByEmail') {
+        return throwError(() => notFound);
+      }
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+
+    await expect(
+      service.deleteAccount('uid-123', 'missing@example.com'),
+    ).resolves.toBeUndefined();
+
+    expect(mockUsersService.send).toHaveBeenCalledTimes(1);
+    expect(mockEventsService.send).not.toHaveBeenCalled();
+    expect(mockVehiclesService.send).not.toHaveBeenCalled();
+    expect(mockMaintenancesService.send).not.toHaveBeenCalled();
+    expect(mockStorageCleanupService.deleteFilesByUrls).not.toHaveBeenCalled();
+    expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('retry-after-full-completion also resolves idempotently when the 404 crosses as a real RpcException instance', async () => {
     const notFound = new RpcException({ status: 404, message: 'not found' });
     mockUsersService.send.mockImplementation((pattern: string) => {
       if (pattern === 'findUserByEmail') {
@@ -146,14 +188,58 @@ describe('AccountDeletionService.deleteAccount', () => {
 
     await expect(
       service.deleteAccount('uid-123', 'missing@example.com'),
-    ).rejects.toThrow(notFound);
+    ).resolves.toBeUndefined();
 
     expect(mockUsersService.send).toHaveBeenCalledTimes(1);
-    expect(mockEventsService.send).not.toHaveBeenCalled();
-    expect(mockVehiclesService.send).not.toHaveBeenCalled();
-    expect(mockMaintenancesService.send).not.toHaveBeenCalled();
-    expect(mockStorageCleanupService.deleteFilesByUrls).not.toHaveBeenCalled();
     expect(mockFirebaseAuthService.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('concurrent race: two overlapping deleteAccount() calls for the same uid both resolve without error', async () => {
+    mockHappyPath();
+
+    const [first, second] = await Promise.allSettled([
+      service.deleteAccount('uid-123', 'rider@example.com'),
+      service.deleteAccount('uid-123', 'rider@example.com'),
+    ]);
+
+    expect(first.status).toBe('fulfilled');
+    expect(second.status).toBe('fulfilled');
+    expect(mockFirebaseAuthService.deleteUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('concurrent race: second call arrives after the first fully completed (findUserByEmail now 404) and still resolves 204-equivalent', async () => {
+    let callCount = 0;
+    mockUsersService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'findUserByEmail') {
+        callCount += 1;
+        if (callCount === 1) return of({ id: 'user-1' });
+        return throwError(() => ({ status: 404, message: 'already deleted' }));
+      }
+      if (pattern === 'hardDeleteUser') return of(undefined);
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+    mockVehiclesService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'hardDeleteAllByOwner') return of({ deletedVehicleCount: 1, imageUrls: [] });
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+    mockMaintenancesService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'softDeleteMaintenancesByUserId') return of({ count: 0 });
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+    mockEventsService.send.mockImplementation((pattern: string) => {
+      if (pattern === 'findEventsByOwnerId') return of([]);
+      if (pattern === 'anonymizeRegistrationsByUserId') return of({ count: 0 });
+      throw new Error(`Unexpected pattern: ${pattern}`);
+    });
+    mockStorageCleanupService.deleteFilesByUrls.mockResolvedValue(undefined);
+    mockFirebaseAuthService.deleteUser.mockResolvedValue(undefined);
+
+    await service.deleteAccount('uid-123', 'rider@example.com');
+    await expect(
+      service.deleteAccount('uid-123', 'rider@example.com'),
+    ).resolves.toBeUndefined();
+
+    expect(mockFirebaseAuthService.deleteUser).toHaveBeenCalledTimes(1);
   });
 
   it('when hardDeleteAllByOwner (vehicles-ms) fails, it propagates and aborts before storage/maintenances/events/hardDeleteUser/Firebase', async () => {
